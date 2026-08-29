@@ -31,9 +31,10 @@ jobs:
         if: ${{ hashFiles('rational.config.json') == '' }}
       - run: npm run build
       - uses: actions/configure-pages@v5
+      # `tsc -b` writes `dist`; the site itself is what `vite build` writes.
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: web-dist
   deploy:
     needs: build
     runs-on: ubuntu-latest
