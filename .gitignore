@@ -1,0 +1,7 @@
+node_modules/
+dist/
+rational.config.json
+.playwright-tmp/
+test-results/
+playwright-report/
+*.local

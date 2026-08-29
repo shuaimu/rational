@@ -1,0 +1,7 @@
+{
+  "endpoint": "https://cloud-test.makodb.com",
+  "projectId": "prj_replace_me",
+  "environmentId": "env_replace_me",
+  "publicProjectKey": "mako_pk.replace_me",
+  "signIn": { "providers": [], "magicLinks": true }
+}
