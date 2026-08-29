@@ -1,7 +1,7 @@
 # Rational
 
-A household money manager — accounts, transactions, categories, tags, budgets —
-that has **no backend server of its own**.
+A household money manager — shared households, accounts, transactions with
+splits, categories and tags — that has **no backend server of its own**.
 
 There is no API server in this repository, and nothing to deploy but static
 files. Everything a server would normally do is done by one of two things:
@@ -36,7 +36,7 @@ A build with no project configured — which is what the published one is — ru
 against an in-browser fake of the same protocol, seeded with a demo household.
 Sign in with any email and a password of eight characters or more and everything
 works: households and roles, accounts, transactions with splits, categories and
-tags, offline edits that queue and settle. None of it leaves the browser, and
+tags, and offline edits that queue and settle on reconnect. None of it leaves the browser, and
 reloading the page keeps it. The banner across the top says so, because made-up
 money should never be mistaken for somebody's money.
 
