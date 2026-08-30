@@ -27,21 +27,23 @@ The point of Rational is that this is enough to build a real product. It is also
 the standing test bed for Mako Cloud: whatever Rational cannot do is a gap in the
 platform, and gets fixed there rather than worked around here.
 
-## The live demo
+## The live site
 
 <https://shuaimu.github.io/rational/> is this repository, built and published by
-GitHub Pages. It talks to no server at all.
+GitHub Pages, and it talks to a real Mako Cloud project — the one
+`rational.config.json` names. Sign up with an email and a password and the data
+is yours: it lives in that project, syncs to every browser you sign in from, and
+survives clearing this one. There is no server between the page and the
+database, and none of the code that runs is ours to operate.
 
-A build with no project configured — which is what the published one is — runs
-against an in-browser fake of the same protocol, seeded with a demo household.
-Sign in with any email and a password of eight characters or more and everything
-works: households and roles, accounts, transactions with splits, categories and
-tags, and offline edits that queue and settle on reconnect. None of it leaves the browser, and
-reloading the page keeps it. The banner across the top says so, because made-up
-money should never be mistaken for somebody's money.
+It is a public preview project, so treat it as one: anybody may sign up, and
+nothing there is backed up or promised to outlive the preview. Put real money
+records in your own project, not this one.
 
-The same build becomes a real client the day `rational.config.json` names a
-project.
+A checkout with no `rational.config.json` — a fresh clone, before you point it
+anywhere — runs against an in-browser fake of the same protocol instead, seeded
+with a demo household, and says so in a banner across the top. Everything works
+there too; none of it leaves the browser.
 
 ## Point it at your own project
 
@@ -57,9 +59,10 @@ npm run dev
 **public** project key. All four are public values: the key identifies browser
 requests for metering and rate limiting, and authorizes nothing by itself — every
 request is still authenticated as a signed-in user and checked against the
-environment's document policies. The example file ships with placeholder ids;
-while they are in place the app knows it has no project and runs the demo, so
-replace all of them at once.
+environment's document policies. This repository commits the file for the
+published site; the example file beside it ships with placeholder ids, and while
+those are in place the app knows it has no project and runs the in-browser
+demo, so replace all of them at once.
 
 The browser calls the API from your own origin, and the platform answers a
 cross-origin request only from an origin the environment lists:

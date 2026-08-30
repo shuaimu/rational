@@ -1,0 +1,11 @@
+{
+  "endpoint": "https://cloud-test.makodb.com",
+  "projectId": "prj_43f3756d4588d7412cbe0b633a455695",
+  "environmentId": "env_482f584a064bb6dc32c443f7c746c5af",
+  "publicProjectKey": "mako_pk.key_rational_mtf84to1.75de657cf071877afb97d9bf2679c28ba9ca271c3f0145d0f34cf3cbe081f899",
+  "functionsEndpoint": "https://cloud-test.makodb.com",
+  "signIn": {
+    "providers": [],
+    "magicLinks": false
+  }
+}

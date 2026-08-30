@@ -1,7 +1,6 @@
 node_modules/
 dist/
 web-dist/
-rational.config.json
 .playwright-tmp/
 test-results/
 playwright-report/
