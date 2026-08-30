@@ -22,7 +22,7 @@
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false"
   },
   "dependencies": {
-    "@mako-cloud/rxdb": "github:makodb/mako-rxdb#v0.1.0",
+    "@mako-cloud/rxdb": "github:makodb/mako-rxdb#v0.2.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "rxdb": "17.4.0",

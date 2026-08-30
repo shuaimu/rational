@@ -4,11 +4,19 @@ import { randomId } from "../model/ids.js";
 import type {
   Account,
   AccountType,
+  Alert,
+  AlertKind,
+  AlertSetting,
   BaseDocument,
+  Budget,
   Category,
   CategoryKind,
+  ConnectionDocument,
+  Goal,
   HouseholdCollectionId,
   RationalDocuments,
+  Recurrence,
+  Rule,
   Split,
   Tag,
   TaxonomyEntry,
@@ -55,6 +63,88 @@ export interface AccountInput {
   readonly institution?: string;
 }
 
+/** One row an import is about to write. */
+export interface ImportRow {
+  readonly date: string;
+  readonly description: string;
+  readonly amount: number;
+  readonly categoryId?: string;
+  readonly ruleId?: string;
+  readonly tags?: readonly string[];
+}
+
+export interface ImportInput {
+  readonly accountId: string;
+  readonly currency: string;
+  readonly filename: string;
+  readonly rows: readonly ImportRow[];
+  readonly rowCount: number;
+  readonly duplicateCount: number;
+}
+
+/** What an import did, for the screen that ran it. */
+export interface ImportOutcome {
+  readonly batchId: string;
+  readonly created: number;
+  readonly duplicates: number;
+  readonly rowCount: number;
+  readonly finishedAt: number;
+}
+
+export interface BudgetInput {
+  readonly category_id: string;
+  readonly month: string;
+  readonly amount: number;
+  readonly currency: string;
+  readonly rollover: boolean;
+}
+
+export interface AlertSettingInput {
+  readonly alert_kind: AlertKind;
+  readonly threshold: number;
+  readonly enabled: boolean;
+}
+
+export interface ConnectionInput {
+  readonly account_id: string;
+  readonly institution: string;
+  /** The institution's own id for the account; the sync asks it by this. */
+  readonly external_id: string;
+}
+
+export interface RecurrenceInput {
+  readonly account_id: string;
+  readonly normalized_description: string;
+  readonly interval: Recurrence["interval"];
+  readonly expected_amount: number;
+  readonly currency: string;
+  readonly next_date: string;
+  readonly last_date?: string;
+  readonly status: Recurrence["status"];
+  readonly matched_count: number;
+}
+
+export interface GoalInput {
+  readonly name: string;
+  readonly target_amount: number;
+  readonly currency: string;
+  readonly target_date?: string;
+  readonly account_id?: string;
+}
+
+export interface RuleInput {
+  readonly name: string;
+  readonly match: {
+    readonly description_contains?: string;
+    readonly amount_min?: number;
+    readonly amount_max?: number;
+    readonly account_id?: string;
+  };
+  readonly set_category_id?: string;
+  readonly add_tags?: readonly string[];
+  readonly priority: number;
+}
+
 export interface TransactionInput {
   readonly account_id: string;
   readonly date: string;
@@ -65,6 +155,10 @@ export interface TransactionInput {
   readonly tags?: readonly string[];
   readonly notes?: string;
   readonly splits?: readonly Split[];
+  /** Set by an import, so a transaction can say where it came from. */
+  readonly import_batch_id?: string;
+  /** Set when a rule categorized it, so the screen can say which rule. */
+  readonly rule_id?: string;
 }
 
 export class HouseholdWrites {
@@ -118,6 +212,54 @@ export class HouseholdWrites {
   }
 
   /**
+   * Import a batch of parsed rows, with the record of what was imported.
+   *
+   * The batch document is written first and every transaction names it, so a
+   * person can see where a transaction came from and an import that fails
+   * part-way leaves a batch whose count says how far it got rather than a
+   * pile of unexplained rows.
+   */
+  async importTransactions(input: ImportInput): Promise<ImportOutcome> {
+    const batchId = randomId("imp");
+    const batch = this.#stamp<ConnectionDocument>(batchId, {
+      kind: "import",
+      account_id: input.accountId,
+      filename: input.filename.slice(0, 200),
+      imported_at: this.#context.now(),
+      row_count: input.rowCount,
+      created_count: 0,
+      duplicate_count: input.duplicateCount,
+    });
+    await this.#insert("connections", batch);
+    let created = 0;
+    for (const row of input.rows) {
+      await this.createTransaction({
+        account_id: input.accountId,
+        date: row.date,
+        amount: row.amount,
+        currency: input.currency,
+        description: row.description,
+        tags: [...(row.tags ?? [])],
+        splits: [],
+        import_batch_id: batchId,
+        ...(row.categoryId === undefined ? {} : { category_id: row.categoryId }),
+        ...(row.ruleId === undefined ? {} : { rule_id: row.ruleId }),
+      });
+      created += 1;
+    }
+    const finished = await this.#patch("connections", batchId, {
+      created_count: created,
+    } as Patch<ConnectionDocument>);
+    return {
+      batchId,
+      created,
+      duplicates: input.duplicateCount,
+      rowCount: input.rowCount,
+      finishedAt: finished.updated_at,
+    };
+  }
+
+  /**
    * `updatedAt` may be supplied by a test to stage a conflict deterministically;
    * the application always stamps the current time.
    */
@@ -139,6 +281,263 @@ export class HouseholdWrites {
 
   async deleteTransaction(id: string): Promise<void> {
     const document = await this.#require("transactions", id);
+    this.#context.noteLocalWrite();
+    await document.incrementalPatch({ updated_at: this.#context.now() });
+    await document.incrementalRemove();
+  }
+
+  /**
+   * Connect an account to the simulated institution.
+   *
+   * The connection is what the scheduled sync reads: it names the account to
+   * write into and the institution's own id for it. Rational writes it from
+   * the browser; from then on the function owns its `last_sync_at` and
+   * outcome, which is why those are not set here.
+   */
+  async connectInstitution(input: ConnectionInput): Promise<ConnectionDocument> {
+    if (input.account_id === "") throw new ValidationError("choose an account");
+    if (input.institution.trim() === "") throw new ValidationError("name the institution");
+    const externalId = input.external_id.trim();
+    if (!/^[A-Za-z0-9_.-]{1,64}$/u.test(externalId)) {
+      throw new ValidationError("the institution's account id may hold letters, digits, . _ and -");
+    }
+    return this.#insert(
+      "connections",
+      this.#stamp<ConnectionDocument>(randomId("con"), {
+        kind: "institution",
+        institution: input.institution.trim(),
+        external_id: externalId,
+        account_id: input.account_id,
+        account_ids: [input.account_id],
+        status: "connected",
+      }),
+    );
+  }
+
+  async setConnectionStatus(
+    id: string,
+    status: NonNullable<ConnectionDocument["status"]>,
+  ): Promise<ConnectionDocument> {
+    return this.#patch("connections", id, { status } as Patch<ConnectionDocument>);
+  }
+
+  /** Confirm a detected recurrence, or record that it was dismissed. */
+  async saveRecurrence(input: RecurrenceInput): Promise<Recurrence> {
+    if (input.account_id === "") throw new ValidationError("choose an account");
+    if (input.normalized_description === "") {
+      throw new ValidationError("a recurrence needs a description");
+    }
+    if (!isIsoDate(input.next_date)) throw new ValidationError("next date must be YYYY-MM-DD");
+    const id = randomId("rec");
+    return this.#insert(
+      "recurrences",
+      this.#stamp<Recurrence>(id, {
+        account_id: input.account_id,
+        normalized_description: input.normalized_description,
+        interval: input.interval,
+        expected_amount: input.expected_amount,
+        currency: input.currency,
+        next_date: input.next_date,
+        ...(input.last_date === undefined ? {} : { last_date: input.last_date }),
+        status: input.status,
+        matched_count: input.matched_count,
+      }),
+    );
+  }
+
+  async updateRecurrence(id: string, patch: Patch<Recurrence>): Promise<Recurrence> {
+    return this.#patch("recurrences", id, patch);
+  }
+
+  /**
+   * The household's standing instruction about one kind of alert. One setting
+   * per kind, by id, because two thresholds for the same question is not a
+   * thing a person means.
+   */
+  async saveAlertSetting(input: AlertSettingInput): Promise<AlertSetting> {
+    if (!Number.isSafeInteger(input.threshold) || input.threshold < 0) {
+      throw new ValidationError("a threshold is a whole, non-negative amount");
+    }
+    const id = alertSettingId(input.alert_kind);
+    const existing = await this.#collection("alerts").findOne(id).exec();
+    if (existing !== null) {
+      return (await this.#patch("alerts", id, {
+        threshold: input.threshold,
+        enabled: input.enabled,
+      } as Patch<AlertSetting>)) as AlertSetting;
+    }
+    return (await this.#insert(
+      "alerts",
+      this.#stamp<AlertSetting>(id, {
+        kind: "setting",
+        alert_kind: input.alert_kind,
+        threshold: input.threshold,
+        enabled: input.enabled,
+      }),
+    )) as AlertSetting;
+  }
+
+  /**
+   * Marking an alert read is the only thing a person does to one. Nothing
+   * deletes an alert: the history is the point, and a household that fired an
+   * alert and then lost the record of it has been told nothing.
+   */
+  async markAlertRead(id: string, read = true): Promise<Alert> {
+    return (await this.#patch("alerts", id, { read } as Patch<Alert>)) as Alert;
+  }
+
+  async createGoal(input: GoalInput): Promise<Goal> {
+    if (input.name.trim() === "") throw new ValidationError("a goal needs a name");
+    if (!Number.isSafeInteger(input.target_amount) || input.target_amount <= 0) {
+      throw new ValidationError("a goal needs a target above zero");
+    }
+    if (!isCurrencyCode(input.currency)) {
+      throw new ValidationError("currency must be an ISO 4217 code such as USD");
+    }
+    if (input.target_date !== undefined && !isIsoDate(input.target_date)) {
+      throw new ValidationError("target date must be YYYY-MM-DD");
+    }
+    return this.#insert(
+      "goals",
+      this.#stamp<Goal>(randomId("goa"), {
+        name: input.name.trim(),
+        target_amount: input.target_amount,
+        currency: input.currency,
+        ...(input.target_date === undefined ? {} : { target_date: input.target_date }),
+        ...(input.account_id === undefined || input.account_id === ""
+          ? {}
+          : { account_id: input.account_id }),
+        status: "active",
+        contributions: [],
+      }),
+    );
+  }
+
+  /**
+   * A contribution is appended to the goal's own list rather than derived
+   * from an account balance: one account holds several goals, and a goal may
+   * be saved for across accounts.
+   */
+  async contributeToGoal(
+    goalId: string,
+    contribution: { date: string; amount: number; note?: string },
+  ): Promise<Goal> {
+    if (!isIsoDate(contribution.date)) throw new ValidationError("date must be YYYY-MM-DD");
+    if (!Number.isSafeInteger(contribution.amount) || contribution.amount === 0) {
+      throw new ValidationError("a contribution needs an amount");
+    }
+    const current = await this.#require("goals", goalId);
+    const goal = current.toJSON() as Goal;
+    const contributions = [
+      ...goal.contributions,
+      {
+        id: randomId("gct"),
+        date: contribution.date,
+        amount: contribution.amount,
+        ...(contribution.note === undefined || contribution.note.trim() === ""
+          ? {}
+          : { note: contribution.note.trim() }),
+      },
+    ];
+    const saved = contributions.reduce((total, entry) => total + entry.amount, 0);
+    return this.#patch("goals", goalId, {
+      contributions,
+      ...(saved >= goal.target_amount && goal.status === "active"
+        ? { status: "completed" as const }
+        : {}),
+    } as Patch<Goal>);
+  }
+
+  async updateGoal(id: string, patch: Patch<Goal>): Promise<Goal> {
+    return this.#patch("goals", id, patch);
+  }
+
+  /**
+   * A budget is one category in one month, so its id is derived from both:
+   * two devices budgeting the same category in the same month write the same
+   * document and the conflict handler settles it, rather than creating two
+   * budgets nobody asked for.
+   */
+  async setBudget(input: BudgetInput): Promise<Budget> {
+    if (input.category_id === "") throw new ValidationError("choose a category");
+    if (!/^\d{4}-\d{2}$/u.test(input.month)) throw new ValidationError("month must be YYYY-MM");
+    if (!Number.isSafeInteger(input.amount) || input.amount < 0) {
+      throw new ValidationError("a budget is a whole, non-negative amount");
+    }
+    if (!isCurrencyCode(input.currency)) {
+      throw new ValidationError("currency must be an ISO 4217 code such as USD");
+    }
+    const id = budgetId(input.category_id, input.month);
+    const existing = await this.#collection("budgets").findOne(id).exec();
+    if (existing !== null) {
+      return this.#patch("budgets", id, {
+        amount: input.amount,
+        currency: input.currency,
+        rollover: input.rollover,
+      } as Patch<Budget>);
+    }
+    return this.#insert(
+      "budgets",
+      this.#stamp<Budget>(id, {
+        category_id: input.category_id,
+        month: input.month,
+        amount: input.amount,
+        currency: input.currency,
+        rollover: input.rollover,
+      }),
+    );
+  }
+
+  async deleteBudget(categoryId: string, month: string): Promise<void> {
+    const document = await this.#require("budgets", budgetId(categoryId, month));
+    this.#context.noteLocalWrite();
+    await document.incrementalPatch({ updated_at: this.#context.now() });
+    await document.incrementalRemove();
+  }
+
+  async createRule(input: RuleInput): Promise<Rule> {
+    if (input.name.trim() === "") throw new ValidationError("a rule needs a name");
+    const match = {
+      ...(input.match.description_contains === undefined ||
+      input.match.description_contains.trim() === ""
+        ? {}
+        : { description_contains: input.match.description_contains.trim() }),
+      ...(input.match.amount_min === undefined ? {} : { amount_min: input.match.amount_min }),
+      ...(input.match.amount_max === undefined ? {} : { amount_max: input.match.amount_max }),
+      ...(input.match.account_id === undefined || input.match.account_id === ""
+        ? {}
+        : { account_id: input.match.account_id }),
+    };
+    if (Object.keys(match).length === 0) {
+      throw new ValidationError("a rule needs at least one condition");
+    }
+    if (
+      match.amount_min !== undefined &&
+      match.amount_max !== undefined &&
+      match.amount_min > match.amount_max
+    ) {
+      throw new ValidationError("the smallest amount must not be above the largest");
+    }
+    const document = this.#stamp<Rule>(randomId("rul"), {
+      name: input.name.trim(),
+      match,
+      ...(input.set_category_id === undefined || input.set_category_id === ""
+        ? {}
+        : { set_category_id: input.set_category_id }),
+      add_tags: [...(input.add_tags ?? [])],
+      priority: Number.isSafeInteger(input.priority) ? input.priority : 10,
+      match_count: 0,
+      enabled: true,
+    });
+    return this.#insert("rules", document);
+  }
+
+  async updateRule(id: string, patch: Patch<Rule>): Promise<Rule> {
+    return this.#patch("rules", id, patch);
+  }
+
+  async deleteRule(id: string): Promise<void> {
+    const document = await this.#require("rules", id);
     this.#context.noteLocalWrite();
     await document.incrementalPatch({ updated_at: this.#context.now() });
     await document.incrementalRemove();
@@ -267,6 +666,21 @@ function validateAccount(input: AccountInput): void {
 }
 
 /** The fields of a transaction, validated, with derived fields filled in. */
+/**
+ * `.` rather than `:` on purpose, as with membership ids: a document id
+ * containing a character `encodeURIComponent` escapes cannot be written from
+ * an edge function (findings log #7c and #12), and the nightly job of Phase 3
+ * writes budgets.
+ */
+export function budgetId(categoryId: string, month: string): string {
+  return `bud_${categoryId}.${month}`;
+}
+
+/** One setting per kind: the id is the question, not an occurrence of it. */
+export function alertSettingId(kind: AlertKind): string {
+  return `als_${kind}`;
+}
+
 function validateTransaction(
   input: TransactionInput | Transaction,
 ): Omit<Transaction, keyof BaseDocument> {
@@ -303,10 +717,22 @@ function validateTransaction(
     tags: [...new Set(input.tags ?? [])],
     splits,
   };
-  const optional: { category_id?: string; notes?: string } = {};
+  const optional: {
+    category_id?: string;
+    notes?: string;
+    import_batch_id?: string;
+    rule_id?: string;
+  } = {};
   if (input.category_id !== undefined && input.category_id !== "") {
     optional.category_id = input.category_id;
   }
   if (input.notes !== undefined && input.notes.trim() !== "") optional.notes = input.notes.trim();
+  // Where the transaction came from and what filed it. A transaction that
+  // says neither is one somebody typed, which is also worth being able to
+  // tell apart.
+  if (input.import_batch_id !== undefined && input.import_batch_id !== "") {
+    optional.import_batch_id = input.import_batch_id;
+  }
+  if (input.rule_id !== undefined && input.rule_id !== "") optional.rule_id = input.rule_id;
   return { ...fields, ...optional };
 }

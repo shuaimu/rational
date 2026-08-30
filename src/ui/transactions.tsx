@@ -1,6 +1,7 @@
-import { type FormEvent, useState } from "react";
+import { type ChangeEvent, type FormEvent, useCallback, useEffect, useState } from "react";
 
 import type { RationalApp } from "../data/rational.js";
+import type { Receipt } from "../data/receipts.js";
 import type { ScopeSession } from "../data/scope.js";
 import { ValidationError } from "../data/writes.js";
 import type { HouseholdCollectionId, Split, Transaction } from "../model/types.js";
@@ -37,7 +38,15 @@ export function TransactionsScreen({
     session.collection("taxonomy")?.find({ selector: { kind: "tag" }, sort: [{ name: "asc" }] }) ??
       null,
   );
+  const rules = useQuery(session.collection("rules")?.find() ?? null);
   const all = useQuery(session.collection("transactions")?.find() ?? null);
+  const [attaching, setAttaching] = useState<Transaction | null>(null);
+  // A receipt outlives its transaction unless something removes it: the
+  // bucket knows nothing about the document that referred to it.
+  const deleteWithReceipts = async (id: string) => {
+    await app.receipts?.removeAll(id).catch(() => undefined);
+    await app.writes?.deleteTransaction(id);
+  };
   const months = selectAvailableMonths(all);
   const filter = {
     ...(route.accountId === undefined ? {} : { accountId: route.accountId }),
@@ -47,6 +56,14 @@ export function TransactionsScreen({
   const [editing, setEditing] = useState<Transaction | "new" | null>(null);
   const categoryName = (id: string | undefined) =>
     id === undefined ? "" : (categories.find((category) => category.id === id)?.name ?? id);
+  /**
+   * Which rule filed a transaction. A category that appeared without anybody
+   * choosing it should say where it came from -- otherwise the household
+   * cannot tell an automatic filing from its own, and cannot find the rule to
+   * change when the filing is wrong.
+   */
+  const ruleName = (id: string | undefined) =>
+    id === undefined ? null : (rules.find((rule) => rule.id === id)?.name ?? "a deleted rule");
   const tagName = (id: string) => tags.find((tag) => tag.id === id)?.name ?? id;
   const accountName = (id: string) => accounts.find((account) => account.id === id)?.name ?? id;
   const total = sumAmounts(transactions);
@@ -176,6 +193,12 @@ export function TransactionsScreen({
               <td>{accountName(transaction.account_id)}</td>
               <td>
                 {transaction.splits.length > 0 ? "split" : categoryName(transaction.category_id)}
+                {transaction.splits.length > 0 || ruleName(transaction.rule_id) === null ? null : (
+                  <small className="muted" data-testid="filed-by">
+                    {" "}
+                    by {ruleName(transaction.rule_id)}
+                  </small>
+                )}
               </td>
               <td>
                 {transaction.tags.map((tagId) => (
@@ -191,10 +214,13 @@ export function TransactionsScreen({
                 <button type="button" className="link" onClick={() => setEditing(transaction)}>
                   Edit
                 </button>
+                <button type="button" className="link" onClick={() => setAttaching(transaction)}>
+                  Receipts
+                </button>
                 <button
                   type="button"
                   className="link"
-                  onClick={() => void app.writes?.deleteTransaction(transaction.id)}
+                  onClick={() => void deleteWithReceipts(transaction.id)}
                 >
                   Delete
                 </button>
@@ -203,7 +229,110 @@ export function TransactionsScreen({
           ))}
         </tbody>
       </table>
+      {attaching === null ? null : (
+        <ReceiptsPanel app={app} transaction={attaching} onClose={() => setAttaching(null)} />
+      )}
     </section>
+  );
+}
+
+/**
+ * The receipts of one transaction: what the household has attached, whoever
+ * attached it. The object carries the household as an attribute the bucket's
+ * rules read, so every member opens the same file and nobody else can.
+ */
+function ReceiptsPanel({
+  app,
+  transaction,
+  onClose,
+}: {
+  app: RationalApp;
+  transaction: Transaction;
+  onClose: () => void;
+}) {
+  const [receipts, setReceipts] = useState<readonly Receipt[] | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const reload = useCallback(async () => {
+    const store = app.receipts;
+    if (store === null) return;
+    try {
+      setReceipts(await store.list(transaction.id));
+      setProblem(null);
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : "the receipts could not be listed");
+    }
+  }, [app, transaction.id]);
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const attach = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file === undefined || app.receipts === null) return;
+    setBusy(true);
+    try {
+      await app.receipts.attach(transaction.id, file);
+      await reload();
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : "the receipt could not be attached");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const open = async (path: string) => {
+    const blob = await app.receipts?.open(path);
+    if (blob === null || blob === undefined) {
+      setProblem("that receipt is no longer stored");
+      return;
+    }
+    globalThis.open(URL.createObjectURL(blob), "_blank", "noopener");
+  };
+
+  return (
+    <div className="panel" data-testid="receipts-panel">
+      <div className="section-heading">
+        <h3>Receipts for {transaction.description}</h3>
+        <button type="button" className="link" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      {problem === null ? null : (
+        <p className="notice error" role="alert">
+          {problem}
+        </p>
+      )}
+      <label>
+        Attach an image or a PDF
+        <input type="file" accept="image/*,application/pdf" disabled={busy} onChange={attach} />
+      </label>
+      {receipts === null ? (
+        <p role="status">Loading receipts…</p>
+      ) : receipts.length === 0 ? (
+        <p className="muted">No receipts yet.</p>
+      ) : (
+        <ul aria-label="Receipts">
+          {receipts.map((receipt) => (
+            <li key={receipt.path} data-testid={`receipt-${receipt.name}`}>
+              <button type="button" className="link" onClick={() => void open(receipt.path)}>
+                {receipt.name}
+              </button>
+              <small> {Math.ceil(receipt.sizeBytes / 1024)} KB</small>
+              <button
+                type="button"
+                className="link"
+                onClick={() => void app.receipts?.remove(receipt.path).then(reload)}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

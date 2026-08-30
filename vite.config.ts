@@ -6,10 +6,11 @@ import { defineConfig, type ProxyOptions } from "vite";
 /**
  * Rational is a static site, so the project it talks to is compiled into the
  * bundle. `rational.config.json` names that project -- endpoint, ids, and the
- * public project key, all of them public values. Without one, the example file
- * stands in; its ids are placeholders, which `src/config.ts` reads as "no
- * project", and the app then runs entirely against its in-browser fake
- * backend. That is what the published demo is.
+ * public project key, all of them public values, and this repository commits
+ * the one the published site uses. A checkout without it falls back to the
+ * example file, whose ids are placeholders; `src/config.ts` reads those as "no
+ * project" and runs the app entirely against its in-browser fake backend, so a
+ * fork builds and runs before it has a project of its own.
  *
  * `base` is `/rational/` because GitHub Pages serves a project page from a
  * subpath, and every asset the built `index.html` names has to be under it.
@@ -38,7 +39,14 @@ interface RationalConfigFile {
 }
 
 function readConfigFile(): RationalConfigFile | null {
-  for (const name of ["rational.config.json", "rational.config.example.json"]) {
+  // `RATIONAL_CONFIG=example` asks for the placeholder, which is how the
+  // wire-mocked suite gets the in-browser fake in a checkout that names a real
+  // project -- the published one does.
+  const names =
+    process.env.RATIONAL_CONFIG === "example"
+      ? ["rational.config.example.json"]
+      : ["rational.config.json", "rational.config.example.json"];
+  for (const name of names) {
     const path = fileURLToPath(new URL(`./${name}`, import.meta.url));
     if (existsSync(path)) return JSON.parse(readFileSync(path, "utf8")) as RationalConfigFile;
   }

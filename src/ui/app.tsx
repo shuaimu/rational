@@ -3,6 +3,13 @@ import { Component, type ReactNode } from "react";
 import type { RationalApp } from "../data/rational.js";
 import { AccountsScreen } from "./accounts.js";
 import { CategoriesScreen } from "./categories.js";
+import { BudgetsScreen } from "./budgets.js";
+import { ConnectionsScreen } from "./connections.js";
+import { ImportScreen } from "./import.js";
+import { PlanScreen } from "./plan.js";
+import { ReportsScreen } from "./reports.js";
+import { AlertsScreen } from "./alerts.js";
+import { RulesScreen } from "./rules.js";
 import { useBehavior } from "./hooks.js";
 import { HouseholdScreen } from "./household.js";
 import { useRoute } from "./router.js";
@@ -87,6 +94,55 @@ function Screens({ app }: { app: RationalApp }) {
               session={session}
               route={route}
               currency={currency}
+            />
+          ) : route.name === "budgets" ? (
+            <BudgetsScreen
+              key={`${state.generation}:budgets`}
+              app={app}
+              session={session}
+              route={route}
+              currency={currency}
+            />
+          ) : route.name === "plan" ? (
+            <PlanScreen
+              key={`${state.generation}:plan`}
+              app={app}
+              session={session}
+              currency={currency}
+            />
+          ) : route.name === "connections" ? (
+            <ConnectionsScreen
+              key={`${state.generation}:connections`}
+              app={app}
+              session={session}
+            />
+          ) : route.name === "import" ? (
+            <ImportScreen
+              key={`${state.generation}:import`}
+              app={app}
+              session={session}
+              currency={currency}
+            />
+          ) : route.name === "rules" ? (
+            <RulesScreen
+              key={`${state.generation}:rules`}
+              app={app}
+              session={session}
+              currency={currency}
+            />
+          ) : route.name === "alerts" ? (
+            <AlertsScreen
+              key={`${state.generation}:alerts`}
+              app={app}
+              session={session}
+              currency={currency}
+            />
+          ) : route.name === "reports" ? (
+            <ReportsScreen
+              key={`${state.generation}:reports`}
+              app={app}
+              session={session}
+              route={route}
             />
           ) : route.name === "categories" ? (
             <CategoriesScreen key={`${state.generation}:categories`} app={app} session={session} />

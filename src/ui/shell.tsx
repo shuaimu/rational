@@ -6,6 +6,13 @@ import { type Route, routeHash } from "./router.js";
 const NAV: ReadonlyArray<{ readonly route: Route; readonly label: string }> = [
   { route: { name: "accounts" }, label: "Accounts" },
   { route: { name: "transactions" }, label: "Transactions" },
+  { route: { name: "budgets" }, label: "Budgets" },
+  { route: { name: "plan" }, label: "Plan" },
+  { route: { name: "import" }, label: "Import" },
+  { route: { name: "connections" }, label: "Connections" },
+  { route: { name: "rules" }, label: "Rules" },
+  { route: { name: "alerts" }, label: "Alerts" },
+  { route: { name: "reports" }, label: "Reports" },
   { route: { name: "categories" }, label: "Categories" },
   { route: { name: "tags" }, label: "Tags" },
   { route: { name: "household" }, label: "Household" },

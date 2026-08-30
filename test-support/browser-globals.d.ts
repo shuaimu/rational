@@ -64,6 +64,29 @@ interface RationalWritesWire {
   ): Promise<RationalDocumentWire>;
   deleteTransaction(id: string): Promise<void>;
   createAccount(input: Record<string, unknown>): Promise<RationalDocumentWire>;
+  createCategory(name: string, kind: string): Promise<RationalDocumentWire>;
+  createRule(input: Record<string, unknown>): Promise<RationalDocumentWire>;
+  updateRule(id: string, patch: Record<string, unknown>): Promise<RationalDocumentWire>;
+  importTransactions(input: Record<string, unknown>): Promise<Record<string, unknown>>;
+  setBudget(input: Record<string, unknown>): Promise<RationalDocumentWire>;
+  saveRecurrence(input: Record<string, unknown>): Promise<RationalDocumentWire>;
+  updateRecurrence(id: string, patch: Record<string, unknown>): Promise<RationalDocumentWire>;
+  saveAlertSetting(input: Record<string, unknown>): Promise<RationalDocumentWire>;
+  markAlertRead(id: string, read?: boolean): Promise<RationalDocumentWire>;
+  createGoal(input: Record<string, unknown>): Promise<RationalDocumentWire>;
+  contributeToGoal(
+    id: string,
+    contribution: Record<string, unknown>,
+  ): Promise<RationalDocumentWire>;
+}
+
+/** The household's receipts, as a browser test reaches them. */
+interface RationalReceiptsWire {
+  list(
+    transactionId: string,
+  ): Promise<ReadonlyArray<{ path: string; name: string; contentType: string; sizeBytes: number }>>;
+  open(path: string): Promise<Blob | null>;
+  remove(path: string): Promise<void>;
 }
 
 interface RationalCollectionWire {
@@ -98,6 +121,7 @@ interface RationalBrowserApplication {
   household: RationalHouseholdWire | null;
   directory: RationalHouseholdWire | null;
   writes: RationalWritesWire | null;
+  receipts: RationalReceiptsWire | null;
   signIn(email: string, password: string): Promise<void>;
   signUp(email: string, password: string): Promise<void>;
   signOut(): Promise<void>;

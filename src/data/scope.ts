@@ -1,6 +1,7 @@
 import {
   type AuthorizationEpochResetEvent,
   MakoAuthorizationEpochCoordinator,
+  MakoLiveStreamGroup,
   type MakoReplicationActivity,
   MakoReplicationError,
   MakoReplicationRecoveryCoordinator,
@@ -21,6 +22,7 @@ import type { ScopeStatePersistence } from "./replication-state.js";
 import {
   type CollectionReplication,
   type ReplicationDependencies,
+  makoConfigFor,
   startCollectionReplication,
 } from "./replication.js";
 
@@ -37,8 +39,10 @@ export interface ScopeDefinition<Ids extends CollectionId> {
   readonly collectionIds: readonly Ids[];
   /** The household whose documents this scope keeps; unset for the directory. */
   readonly householdId?: string;
-  /** Collections that open a live stream; the others pull on the poll interval. */
-  readonly streamedCollections: readonly Ids[];
+  /**
+   * Every collection streams, over one connection. A browser has six to a
+   * host, so a stream each would starve the pulls and pushes; a group is one.
+   */
   readonly pollIntervalMs: number;
 }
 
@@ -83,6 +87,7 @@ export class ScopeSession<Ids extends CollectionId> {
   readonly database: RationalDatabase<Ids>;
   readonly replications: ReadonlyMap<Ids, CollectionReplication<unknown>>;
   readonly identifier: string;
+  readonly #live: MakoLiveStreamGroup;
   #pollTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
@@ -90,10 +95,12 @@ export class ScopeSession<Ids extends CollectionId> {
     replications: ReadonlyMap<Ids, CollectionReplication<unknown>>,
     identifier: string,
     pollIntervalMs: number,
+    live: MakoLiveStreamGroup,
   ) {
     this.database = database;
     this.replications = replications;
     this.identifier = identifier;
+    this.#live = live;
     if (pollIntervalMs > 0) {
       this.#pollTimer = setInterval(() => this.reSync(), pollIntervalMs);
     }
@@ -139,6 +146,7 @@ export class ScopeSession<Ids extends CollectionId> {
   async stop(): Promise<void> {
     if (this.#pollTimer !== null) clearInterval(this.#pollTimer);
     this.#pollTimer = null;
+    this.#live.close();
     await Promise.all([...this.replications.values()].map((entry) => entry.stop()));
   }
 
@@ -187,16 +195,21 @@ export class ScopeController<Ids extends CollectionId> {
       `rational:${this.definition.name}:v1`,
       {
         pauseReplication: () => this.#session?.pause() ?? Promise.resolve(),
-        clearReplicatedCollection: async () => {
+        clearReplicatedCollection: async ({ replicationRunning }) => {
           const session = this.#session;
           this.#session = null;
           // Tell the screens first so nothing renders from a database being erased.
           this.#patch((state) => ({ ...state, activity: "paused" }));
-          // A reset can also arrive before this run opened anything — the
-          // epochs moved while the person was away — and the previous
-          // generation's data is still on the device either way.
-          if (session === null) await removeDatabase(this.definition.databaseName);
-          else await session.remove();
+          // A reset also arrives before this run opened anything — the epochs
+          // moved while the person was away — and the previous generation's
+          // data is on the device either way. With nothing open there is no
+          // handle to erase it through, so it goes by database name.
+          if (!replicationRunning || session === null) {
+            await session?.remove();
+            await removeDatabase(this.definition.databaseName);
+          } else {
+            await session.remove();
+          }
         },
         onSecurityReset: (event: AuthorizationEpochResetEvent) => {
           this.#patch((state) => ({
@@ -382,20 +395,33 @@ export class ScopeController<Ids extends CollectionId> {
       await database.close();
       return;
     }
+    // One connection for every collection in this scope. A stream each would
+    // exhaust the six a browser gives a host before half of them were open,
+    // and the pulls and pushes would queue behind the ones that were.
+    const live = new MakoLiveStreamGroup(
+      definition.collectionIds.map((collectionId) =>
+        makoConfigFor(dependencies.config, collectionId, definition.householdId),
+      ),
+      dependencies.auth.client,
+      {
+        fetch: dependencies.transport.fetch,
+        reconnectMinimumDelayMs: Math.max(10, Math.min(dependencies.config.retryTimeMs, 60_000)),
+        reconnectMaximumDelayMs: Math.max(
+          40,
+          Math.min(dependencies.config.retryTimeMs * 8, 300_000),
+        ),
+        onResyncReason: (reason) => this.#onResync(reason),
+      },
+    );
     const replications = new Map<Ids, CollectionReplication<unknown>>();
     for (const collectionId of definition.collectionIds) {
       const collection = database.collections[collectionId];
       const checkpoints = this.#state.checkpointsFor(collectionId);
-      // Only a streamed collection needs the checkpoint handed back: RxDB
-      // keeps its own pull checkpoint, and the stream is what would otherwise
-      // start at the tail and miss what happened while the page was closed.
-      const initialCheckpoint = checkpoints === undefined ? null : await checkpoints.load();
       const replication = startCollectionReplication(collection, collectionId, dependencies, {
         identifier,
         ...(definition.householdId === undefined ? {} : { householdId: definition.householdId }),
-        stream: definition.streamedCollections.includes(collectionId),
+        stream$: live.stream$(collectionId),
         ...(checkpoints === undefined ? {} : { checkpoints }),
-        ...(initialCheckpoint === null ? {} : { initialCheckpoint }),
         onResync: (reason) => this.#onResync(reason),
         onError: (error) => this.#onError(error),
       });
@@ -433,7 +459,13 @@ export class ScopeController<Ids extends CollectionId> {
         ),
       );
     }
-    const session = new ScopeSession(database, replications, identifier, definition.pollIntervalMs);
+    const session = new ScopeSession(
+      database,
+      replications,
+      identifier,
+      definition.pollIntervalMs,
+      live,
+    );
     this.#session = session;
     this.#patch((state) => ({
       ...state,

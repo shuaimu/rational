@@ -23,6 +23,7 @@ import {
   type ScopeSession,
   type ScopeState,
 } from "./scope.js";
+import { Receipts } from "./receipts.js";
 import { Transport, type TransportCounters } from "./transport.js";
 import { HouseholdWrites } from "./writes.js";
 
@@ -78,14 +79,6 @@ export interface RationalAppOptions {
 
 const HOUSEHOLD_KEY = "rational.household";
 /**
- * Only a couple of collections keep a live stream open: every stream is one
- * HTTP/1.1 connection, and a browser allows six per host, so fifteen streams
- * would starve the pulls and pushes themselves. The rest poll.
- */
-const STREAMED_HOUSEHOLD_COLLECTIONS: readonly HouseholdCollectionId[] = ["transactions"];
-const STREAMED_DIRECTORY_COLLECTIONS: readonly DirectoryCollectionId[] = ["memberships"];
-
-/**
  * The application object: authentication, the user's directory of households,
  * the household currently open, connectivity, and the test hooks. The UI
  * renders `state$`; the browser tests drive the same object as `window.rational`.
@@ -99,6 +92,7 @@ export class RationalApp {
   #directory: Controller<DirectoryCollectionId> | null = null;
   #household: Controller<HouseholdCollectionId> | null = null;
   #writes: HouseholdWrites | null = null;
+  #receipts: Receipts | null = null;
   readonly #stateStore = createReplicationStateStore();
   readonly #households: HouseholdsClient | null;
   #subscriptions = new Set<Subscription>();
@@ -153,6 +147,16 @@ export class RationalApp {
   /** The current household's write helpers, or null before one is open. */
   get writes(): HouseholdWrites | null {
     return this.#writes;
+  }
+
+  /**
+   * The current household's receipts, or null before one is open. Files are
+   * not documents: they live in the storage bucket, and every member of the
+   * household may open one because the object carries the household as an
+   * attribute the bucket's rules read.
+   */
+  get receipts(): Receipts | null {
+    return this.#receipts;
   }
 
   get household(): Controller<HouseholdCollectionId> | null {
@@ -368,7 +372,6 @@ export class RationalApp {
         databaseName: databaseName("rational", householdId),
         collectionIds: HOUSEHOLD_COLLECTIONS,
         householdId,
-        streamedCollections: STREAMED_HOUSEHOLD_COLLECTIONS,
         pollIntervalMs: this.config.mode === "fake" ? 1_000 : 10_000,
       },
       dependencies: { config: this.config, auth: this.auth, transport: this.transport },
@@ -391,6 +394,10 @@ export class RationalApp {
                 now: this.#now,
                 noteLocalWrite: () => controller.noteLocalWrite(),
               });
+        this.#receipts =
+          session === null
+            ? null
+            : new Receipts(this.config, this.auth, this.transport, householdId);
       }
       // The screens remount only when the session object itself changes.
       this.#patch((state) => ({
@@ -563,7 +570,6 @@ export class RationalApp {
         name: `directory-${user.id}`,
         databaseName: databaseName("rational-directory", user.id),
         collectionIds: DIRECTORY_COLLECTIONS,
-        streamedCollections: STREAMED_DIRECTORY_COLLECTIONS,
         pollIntervalMs: this.config.mode === "fake" ? 1_000 : 10_000,
       },
       dependencies: { config: this.config, auth: this.auth, transport: this.transport },
@@ -613,7 +619,11 @@ export class RationalApp {
         this.#reconcileSelection(memberships);
       });
     // An invitation is a membership document that names an address rather
-    // than a user; the person it names is the one who may accept it.
+    // than a user; the person it names is the one who may accept it. The
+    // policy scopes the row to that address -- `old.email == identity.email
+    // && identity.email_verified` -- so replication delivers only this
+    // user's, and the filter here is the client agreeing with the server
+    // rather than the thing that keeps other people's addresses private.
     subscription.add(
       session.collections.memberships
         .find({ selector: { status: "invited" } })
@@ -691,6 +701,7 @@ export class RationalApp {
     const controller = this.#household;
     this.#household = null;
     this.#writes = null;
+    this.#receipts = null;
     this.#householdWatch?.unsubscribe();
     this.#householdWatch = null;
     if (controller === null) return;

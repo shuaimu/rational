@@ -1,5 +1,6 @@
 import type { Transaction } from "../model/types.js";
 import { memoizeLast } from "./memo.js";
+import { monthKey } from "../../functions/shared/budgets.js";
 
 export const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
 
@@ -13,10 +14,7 @@ export function isIsoDate(value: string): boolean {
   );
 }
 
-/** `2026-08-14` → `2026-08`. */
-export function monthKey(date: string): string {
-  return date.slice(0, 7);
-}
+export { monthKey } from "../../functions/shared/budgets.js";
 
 export interface TransactionFilter {
   readonly accountId?: string;
@@ -63,11 +61,4 @@ export function sumAmounts(transactions: readonly Transaction[]): number {
 }
 
 /** Description normalization shared by rules, dedupe, and recurrence detection. */
-export function normalizeDescription(description: string): string {
-  return description
-    .toLowerCase()
-    .replaceAll(/[0-9#*]+/gu, " ")
-    .replaceAll(/[^a-z ]+/gu, " ")
-    .replaceAll(/\s+/gu, " ")
-    .trim();
-}
+export { normalizeDescription } from "../../functions/shared/recurrences.js";
