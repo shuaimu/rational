@@ -141,14 +141,30 @@ function mako(args, input) {
   const executable = options.cli;
   const command = executable.endsWith(".js") ? "node" : executable;
   const commandArgs = executable.endsWith(".js") ? [executable, ...args] : args;
-  const result = spawnSync(command, commandArgs, {
-    env: cliEnvironment,
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-    ...(input === undefined ? {} : { input }),
-  });
-  if (result.error) fail(`could not run ${executable}: ${result.error.message}`);
-  return { status: result.status ?? -1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+  // A hosted deployment takes scheduled checkpoint backups that restart a
+  // service for a few seconds, and the API answers `unavailable ... retry
+  // after 1s` through the window. A bootstrap spans minutes of calls, so one
+  // window must not abort it: an `unavailable` refusal is retried the way the
+  // advice says, a bounded number of times. Every other failure stays fatal.
+  for (let attempt = 1; ; attempt += 1) {
+    const result = spawnSync(command, commandArgs, {
+      env: cliEnvironment,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      ...(input === undefined ? {} : { input }),
+    });
+    if (result.error) fail(`could not run ${executable}: ${result.error.message}`);
+    const run = {
+      status: result.status ?? -1,
+      stdout: result.stdout ?? "",
+      stderr: result.stderr ?? "",
+    };
+    if (run.status === 0 || !run.stderr.includes("error unavailable") || attempt >= 8) {
+      return run;
+    }
+    log(`retrying after an unavailable window (attempt ${attempt}): mako ${args[0]} ${args[1] ?? ""}`);
+    spawnSync("sleep", ["3"]);
+  }
 }
 
 /** Run a command with --json and parse its output; exit codes in `allow` return null. */
@@ -287,7 +303,7 @@ for (const collection of model.collections) {
       String(model.schemaVersion),
       ...tenant,
     ]);
-    if (published?.outcome === "migration_required" || published?.migrationRequired === true) {
+    if (published?.status === "migration_required" || published?.migrationRequired === true) {
       fail(
         `collection ${collection.id} needs a migration for schema version ${model.schemaVersion}; ` +
           "stored documents do not fit the new schema",
@@ -330,7 +346,11 @@ for (const collection of model.collections) {
   );
   const active = makoJson(["policies", "get", collection.id, ...tenant], [4]);
   const activeRules = active?.policy?.state === "active" ? active.policy.rules : null;
-  if (activeRules !== null && deepEqual(activeRules, desired.rules)) {
+  // Allow-rules are an OR: their order carries no meaning, and the platform
+  // serves them in its own order. Comparing them positionally made every
+  // re-run against a deployed environment draft one more identical version.
+  const byId = (rules) => [...rules].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  if (activeRules !== null && deepEqual(byId(activeRules), byId(desired.rules))) {
     log(`policy of ${collection.id} is active and up to date (version ${active.policy.version})`);
     continue;
   }
@@ -524,6 +544,16 @@ function deployHouseholdsFunction() {
 }
 
 /**
+ * Limits for the two scheduled functions. They are batch jobs: the nightly
+ * walks every household and the sync walks every connection, so the 1-second
+ * default CPU budget -- sized for a request handler -- kills them on any
+ * environment with real accumulated data, and a CPU kill surfaces as a bare
+ * `invocation_failed` with nothing in the function's own logs. Ten seconds of
+ * CPU and a minute of wall are still bounded; they are just batch-shaped.
+ */
+const SCHEDULED_LIMITS = { cpuMilliseconds: 10_000, wallMilliseconds: 60_000 };
+
+/**
  * Deploy `functions/institution-sync` and put it on a schedule.
  *
  * The credential is scoped to what a sync writes and nothing else: it reads
@@ -607,7 +637,17 @@ function deploySyncFunction() {
     const secretNames = plaidConfigured
       ? [...new Set([...configuration.secretNames, "PLAID_CLIENT_ID", "PLAID_SECRET"])].sort()
       : configuration.secretNames;
-    const reconciled = { ...configuration, secretNames, allowedHosts: desiredHosts };
+    // Say `allowedHosts` only when there is something to say: a control plane
+    // from before the field refuses unknown keys, and a bootstrap that
+    // declares nothing must keep working against it.
+    const reconciled = {
+      ...configuration,
+      secretNames,
+      limits: { ...configuration.limits, ...SCHEDULED_LIMITS },
+      ...(desiredHosts.length === 0 && (configuration.allowedHosts ?? []).length === 0
+        ? {}
+        : { allowedHosts: desiredHosts }),
+    };
     if (JSON.stringify(reconciled) !== JSON.stringify(configuration)) {
       log(`updating ${functionName} configuration (egress: ${desiredHosts.join(", ") || "none"})`);
       makoJson([
@@ -634,6 +674,10 @@ function deploySyncFunction() {
     secretName,
     "--secret",
     RUN_KEY_SECRET,
+    "--cpu-ms",
+    String(SCHEDULED_LIMITS.cpuMilliseconds),
+    "--wall-ms",
+    String(SCHEDULED_LIMITS.wallMilliseconds),
     // The declaration is the platform's egress capability used the ordinary
     // way: one HTTPS host, granted at the worker permission boundary and
     // reviewable in `mako functions get`.
@@ -753,6 +797,18 @@ function deployNightlyFunction() {
       ...tenant,
     ]);
   }
+  const existingNightly = makoJson(["functions", "get", functionName, ...tenant], [4]);
+  if (existingNightly !== null) {
+    const configuration = existingNightly.configuration;
+    const reconciled = {
+      ...configuration,
+      limits: { ...configuration.limits, ...SCHEDULED_LIMITS },
+    };
+    if (JSON.stringify(reconciled) !== JSON.stringify(configuration)) {
+      log(`updating ${functionName} limits for batch work`);
+      makoJson(["functions", "update", functionName, "--config", JSON.stringify(reconciled), ...tenant]);
+    }
+  }
   const source = stageFunctionBundle("nightly", "nightly-function");
   const deployed = mako([
     "functions",
@@ -767,6 +823,10 @@ function deployNightlyFunction() {
     secretName,
     "--secret",
     RUN_KEY_SECRET,
+    "--cpu-ms",
+    String(SCHEDULED_LIMITS.cpuMilliseconds),
+    "--wall-ms",
+    String(SCHEDULED_LIMITS.wallMilliseconds),
     "--yes",
     ...tenant,
     "--json",
