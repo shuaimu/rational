@@ -5,7 +5,13 @@
   "publicProjectKey": "mako_pk.key_rational_mtf84to1.75de657cf071877afb97d9bf2679c28ba9ca271c3f0145d0f34cf3cbe081f899",
   "functionsEndpoint": "https://cloud-test.makodb.com",
   "signIn": {
-    "providers": [],
+    "providers": [
+      {
+        "name": "google",
+        "enabled": true,
+        "label": "Google"
+      }
+    ],
     "magicLinks": false
   }
 }
