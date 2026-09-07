@@ -100,6 +100,7 @@ build is the ordinary build.
 | Path | What it is |
 | --- | --- |
 | `src/` | The app: React, RxDB, and the Mako client. No server code. |
+| `src/kit/` | The Mako design system the screens are built from — tokens with a light and a dark palette, Radix-based components, Recharts charts — copied here from the platform repository so this one needs nothing that is not on npm. |
 | `src/testing/` | The in-browser fake of the Mako protocol the demo runs on. |
 | `functions/` | Edge functions, deployed to Mako Cloud's runtime. |
 | `mako/` | Collections, policies, indexes, and buckets, as data. |
