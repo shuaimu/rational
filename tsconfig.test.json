@@ -23,7 +23,15 @@
     "types": [
       "node",
       "@playwright/test"
-    ]
+    ],
+    "paths": {
+      "@mako-cloud/ui": [
+        "./src/kit/index.ts"
+      ],
+      "@mako-cloud/ui/*": [
+        "./src/kit/*"
+      ]
+    }
   },
   "include": [
     "playwright.config.ts",

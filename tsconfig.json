@@ -27,7 +27,15 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo",
     "types": [
       "vite/client"
-    ]
+    ],
+    "paths": {
+      "@mako-cloud/ui": [
+        "./src/kit/index.ts"
+      ],
+      "@mako-cloud/ui/*": [
+        "./src/kit/*"
+      ]
+    }
   },
   "include": [
     "src/**/*.ts",

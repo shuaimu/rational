@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type ProxyOptions } from "vite";
 
 /**
@@ -92,6 +93,29 @@ export default defineConfig(({ command }) => {
   }
   return {
     base: "/rational/",
+    plugins: [tailwindcss()],
+    // The design system travels with this repository as sources under
+    // `src/kit`; its package name resolves there.
+    resolve: {
+      alias: {
+        "@mako-cloud/ui": fileURLToPath(new URL("./src/kit/index.ts", import.meta.url)),
+      },
+    },
+    // Pre-bundled up front rather than on the first request, which would
+    // otherwise take a minute cold and reload the page mid-way through a test.
+    optimizeDeps: {
+      include: [
+        "react",
+        "react-dom",
+        "react-dom/client",
+        "recharts",
+        "radix-ui",
+        "lucide-react",
+        "clsx",
+        "tailwind-merge",
+        "class-variance-authority",
+      ],
+    },
     define: { __RATIONAL_ENV__: JSON.stringify(runtimeEnvironment) },
     build: { outDir: "web-dist", emptyOutDir: true },
     server: Object.keys(proxy).length === 0 ? {} : { proxy },
