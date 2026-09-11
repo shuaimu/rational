@@ -12,6 +12,18 @@ export type RationalCollections<Ids extends CollectionId> = {
 export type RationalDatabase<Ids extends CollectionId> = RxDatabase<RationalCollections<Ids>>;
 
 /**
+ * RxDB's codes for "what is on the device cannot be opened by this build":
+ * `DB6`, a collection stored under a different schema at the same local
+ * version, and `DM5`, database state written by an older RxDB major.
+ */
+export const STORED_STATE_INCOMPATIBLE_CODES: readonly string[] = ["DB6", "DM5"];
+
+export function isStoredStateIncompatible(error: unknown): boolean {
+  const code = (error as { readonly code?: unknown } | null)?.code;
+  return typeof code === "string" && STORED_STATE_INCOMPATIBLE_CODES.includes(code);
+}
+
+/**
  * An RxDB database on Dexie (IndexedDB) with one collection per document
  * type, every collection sharing the deterministic conflict handler. The
  * storage is durable, which is the point: a reload or an offline restart
@@ -26,11 +38,19 @@ export async function openDatabase<Ids extends CollectionId>(
   } catch (error) {
     // A device that stored the model under an older schema cannot open the
     // new one -- RxDB refuses a changed schema at the same local version, and
-    // it is right to. Rational's answer is the local-first one: the device's
-    // copy is a replica of the server's, so erase it and pull it again. What
-    // is lost is only unsynced local edits from the moment of upgrade, which
-    // is the honest trade of shipping a new model to a static site without
+    // it is right to; state written by an older RxDB major is refused the
+    // same way. Rational's answer is the local-first one: the device's copy
+    // is a replica of the server's, so erase it and pull it again. What is
+    // lost is only unsynced local edits from the moment of upgrade, which is
+    // the honest trade of shipping a new model to a static site without
     // per-version migration code.
+    //
+    // Only those two failures say the stored data is unusable. Anything else
+    // -- the free build's cap on open collections (COL23), a name still open
+    // elsewhere (DB8), a storage or quota failure -- says nothing about the
+    // data, and erasing on it would destroy edits that never left the
+    // device. Those are raised to the caller, who keeps the data and says so.
+    if (!isStoredStateIncompatible(error)) throw error;
     console.warn(`local database ${name} predates the current model; rebuilding`, error);
     await removeRxDatabase(name, getRxStorageDexie());
     return await createAndAddCollections(name, collectionIds);

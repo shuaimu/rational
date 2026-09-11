@@ -129,3 +129,33 @@ export function startCollectionReplication<Id extends CollectionId>(
     },
   };
 }
+
+/**
+ * A push-only, one-shot replication of a collection under the same identifier
+ * as its live replication. It shares that replication's record of what the
+ * server has already been sent, so it pushes exactly the local writes that
+ * never left the device and nothing else; it is how a scope saves its offline
+ * edits before erasing its database for a full resync. The caller cancels the
+ * live replication first -- two replications of one identifier must not run
+ * at once -- and cancels this one when it is done.
+ */
+export function startPendingWritesDrain<Id extends CollectionId>(
+  collection: RxCollection<RationalDocuments[Id]>,
+  collectionId: Id,
+  dependencies: ReplicationDependencies,
+  options: { readonly identifier: string; readonly householdId?: string },
+): RxReplicationState<RationalDocuments[Id], MakoCheckpoint> {
+  type T = RationalDocuments[Id];
+  const { auth, transport, config } = dependencies;
+  const makoConfig = makoConfigFor(config, collectionId, options.householdId);
+  return replicateRxCollection<T, MakoCheckpoint>({
+    replicationIdentifier: `${options.identifier}:${collectionId}`,
+    collection,
+    push: createMakoPushOptions<T>(makoConfig, auth.client, { fetch: transport.fetch }),
+    live: false,
+    retryTime: config.retryTimeMs,
+    waitForLeadership: false,
+    toggleOnDocumentVisible: false,
+    autoStart: true,
+  });
+}
