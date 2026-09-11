@@ -24,6 +24,7 @@ import {
   makoConfigFor,
   type ReplicationDependencies,
   startCollectionReplication,
+  startPendingWritesDrain,
 } from "./replication.js";
 import type { ScopeStatePersistence } from "./replication-state.js";
 
@@ -84,12 +85,24 @@ const INITIAL_STATE: ScopeState = {
   notice: null,
 };
 
+/** How long one attempt to push a session's pending writes may take before it is retried. */
+const DRAIN_ATTEMPT_MS = 10_000;
+/** How long a removal waits for pending writes to leave the device while the network is up. */
+const REMOVE_FLUSH_MS = 5_000;
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 export class ScopeSession<Ids extends CollectionId> {
   readonly database: RationalDatabase<Ids>;
   readonly replications: ReadonlyMap<Ids, CollectionReplication<unknown>>;
   readonly identifier: string;
   readonly #live: MakoLiveStreamGroup;
+  readonly #dependencies: ReplicationDependencies;
+  readonly #householdId: string | undefined;
   #pollTimer: ReturnType<typeof setInterval> | null = null;
+  #stopped = false;
 
   constructor(
     database: RationalDatabase<Ids>,
@@ -97,11 +110,15 @@ export class ScopeSession<Ids extends CollectionId> {
     identifier: string,
     pollIntervalMs: number,
     live: MakoLiveStreamGroup,
+    dependencies: ReplicationDependencies,
+    householdId?: string,
   ) {
     this.database = database;
     this.replications = replications;
     this.identifier = identifier;
     this.#live = live;
+    this.#dependencies = dependencies;
+    this.#householdId = householdId;
     if (pollIntervalMs > 0) {
       this.#pollTimer = setInterval(() => this.reSync(), pollIntervalMs);
     }
@@ -145,10 +162,49 @@ export class ScopeSession<Ids extends CollectionId> {
   }
 
   async stop(): Promise<void> {
+    if (this.#stopped) return;
+    this.#stopped = true;
     if (this.#pollTimer !== null) clearInterval(this.#pollTimer);
     this.#pollTimer = null;
     this.#live.close();
     await Promise.all([...this.replications.values()].map((entry) => entry.stop()));
+  }
+
+  /**
+   * Push what never left the device, and pull nothing. The live replications
+   * are stopped and a push-only pass runs under the same identifiers, so it
+   * sends exactly the writes RxDB knows the server has not seen. Resolves
+   * true once every collection has been sent within `timeoutMs`, false when
+   * it could not be -- offline, say -- with the database untouched either way.
+   */
+  async drainPendingWrites(timeoutMs: number): Promise<boolean> {
+    await this.stop();
+    const drains = [...this.replications.keys()].map((collectionId) =>
+      startPendingWritesDrain(
+        this.database.collections[collectionId],
+        collectionId,
+        this.#dependencies,
+        {
+          identifier: this.identifier,
+          ...(this.#householdId === undefined ? {} : { householdId: this.#householdId }),
+        },
+      ),
+    );
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const timeout = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), timeoutMs);
+    });
+    try {
+      return await Promise.race([
+        Promise.all(drains.map((drain) => drain.awaitInitialReplication())).then(() => true),
+        timeout,
+      ]);
+    } catch {
+      return false;
+    } finally {
+      if (timer !== null) clearTimeout(timer);
+      await Promise.all(drains.map((drain) => drain.cancel().catch(() => undefined)));
+    }
   }
 
   /** Stop replicating and close the database, keeping its data on disk. */
@@ -186,6 +242,7 @@ export class ScopeController<Ids extends CollectionId> {
   #closed = false;
   #refreshInFlight: Promise<void> | null = null;
   #openInFlight: Promise<void> = Promise.resolve();
+  #resyncInFlight: Promise<void> | null = null;
 
   constructor(options: ScopeControllerOptions<Ids>) {
     this.definition = options.definition;
@@ -369,7 +426,13 @@ export class ScopeController<Ids extends CollectionId> {
 
   async remove(): Promise<void> {
     this.#closed = true;
-    await this.#session?.remove();
+    const session = this.#session;
+    // Leaving with changes still waiting -- a sign-out right after an offline
+    // edit -- gives them one bounded chance to reach the server first.
+    if (session !== null && this.state.pendingWrites > 0 && this.#dependencies.transport.online) {
+      await Promise.race([session.awaitInSync(), sleep(REMOVE_FLUSH_MS)]).catch(() => undefined);
+    }
+    await session?.remove();
     this.#session = null;
     // A database that is gone has no checkpoint to resume from. Left behind,
     // the next generation of this scope on this device — the same person
@@ -401,7 +464,22 @@ export class ScopeController<Ids extends CollectionId> {
     }
     const definition = this.definition;
     const dependencies = this.#dependencies;
-    const database = await openDatabase(definition.databaseName, definition.collectionIds);
+    let database: RationalDatabase<Ids>;
+    try {
+      database = await openDatabase(definition.databaseName, definition.collectionIds);
+    } catch (error) {
+      // The data on the device is intact and was not erased; say so rather
+      // than leave a blank screen behind an unhandled rejection.
+      const code = (error as { readonly code?: unknown } | null)?.code;
+      this.#patch((state) => ({
+        ...state,
+        activity: "paused",
+        notice: `Local data could not be opened${
+          typeof code === "string" ? ` (${code})` : ""
+        }. Nothing was erased; reload to try again.`,
+      }));
+      throw error;
+    }
     // Opening is asynchronous and the scope may have been closed meanwhile —
     // the person switched households. Leaving this database open would keep
     // the name taken and the next open of it would be refused (RxDB DB8).
@@ -479,6 +557,8 @@ export class ScopeController<Ids extends CollectionId> {
       identifier,
       definition.pollIntervalMs,
       live,
+      dependencies,
+      definition.householdId,
     );
     this.#session = session;
     this.#patch((state) => ({
@@ -507,10 +587,26 @@ export class ScopeController<Ids extends CollectionId> {
     );
   }
 
+  /**
+   * A stream `resync` and the pull error it caused arrive together routinely;
+   * one reset serves both, and a second caller waits for it.
+   */
   async #fullResync(reason: string): Promise<void> {
+    this.#resyncInFlight ??= this.#runFullResync(reason).finally(() => {
+      this.#resyncInFlight = null;
+    });
+    await this.#resyncInFlight;
+  }
+
+  async #runFullResync(reason: string): Promise<void> {
     const session = this.#session;
-    this.#session = null;
     this.#patch((state) => ({ ...state, activity: "paused" }));
+    // Erasing the database would erase the writes in it that were never
+    // pushed -- an offline week of edits, queued behind the very reconnect
+    // that brought "checkpoint expired". They leave the device first.
+    if (session !== null && !(await this.#savePendingWrites(session, reason))) return;
+    if (this.#closed) return;
+    this.#session = null;
     await session?.remove();
     this.#patch((state) => ({
       ...state,
@@ -520,6 +616,29 @@ export class ScopeController<Ids extends CollectionId> {
     await this.#state.clearReplicationState();
     await this.#open(`rational:${this.definition.name}:resync-${Date.now().toString(36)}`);
     await this.#recovery.markActive();
+  }
+
+  /**
+   * Push a session's pending writes and wait for as long as that takes:
+   * offline, until the network returns. Nothing is lost by waiting, and the
+   * local data stays readable meanwhile. False only when the scope closed.
+   */
+  async #savePendingWrites(session: ScopeSession<Ids>, reason: string): Promise<boolean> {
+    for (let attempt = 0; !this.#closed; attempt += 1) {
+      this.#patch((state) => ({
+        ...state,
+        notice:
+          attempt === 0
+            ? `Saving your offline changes before local data is reset (${reason})…`
+            : `Still saving your offline changes before local data is reset (${reason}); waiting for the network.`,
+      }));
+      if (await session.drainPendingWrites(DRAIN_ATTEMPT_MS)) {
+        this.#patch((state) => ({ ...state, pendingWrites: 0 }));
+        return true;
+      }
+      await sleep(Math.min(this.#dependencies.config.retryTimeMs * 2 ** attempt, 30_000));
+    }
+    return false;
   }
 
   async #onResync(reason: MakoResyncReason): Promise<void> {
