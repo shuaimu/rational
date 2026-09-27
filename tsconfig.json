@@ -50,6 +50,7 @@
     "functions/shared/rules.ts",
     "functions/shared/transfers.ts",
     "mako/collections.json",
-    "scripts/*.d.mts"
+    "scripts/*.d.mts",
+    "shared/**/*.ts"
   ]
 }

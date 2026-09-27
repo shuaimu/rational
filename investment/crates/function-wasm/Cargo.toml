@@ -1,0 +1,10 @@
+[package]
+name = "robinlab-function-wasm"
+version = "0.1.0"
+edition = "2021"
+[lib]
+crate-type = ["cdylib", "rlib"]
+[dependencies]
+robinlab-domain = { path = "../domain" }
+wasm-bindgen = "=0.2.108"
+serde_json = "1"

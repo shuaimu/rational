@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { MakoAuthError, MakoAuthenticationRequiredError } from "@mako-cloud/rxdb";
 
-import { throughTransient } from "../src/auth.ts";
+import { throughTransient } from "../dist/src/auth.js";
 
 /**
  * The hosted platform restarts a service for a couple of seconds when it

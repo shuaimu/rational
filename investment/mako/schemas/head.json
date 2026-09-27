@@ -1,0 +1,140 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "format",
+    "sequence",
+    "public_root",
+    "private_root",
+    "command",
+    "next_ids"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "enum": [
+        "portfolio"
+      ],
+      "maxLength": 32
+    },
+    "format": {
+      "type": "integer",
+      "enum": [
+        1
+      ]
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "public_root": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "bytes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 66,
+          "maxLength": 66,
+          "pattern": "^m_[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768
+        }
+      }
+    },
+    "private_root": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "bytes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 66,
+          "maxLength": 66,
+          "pattern": "^m_[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768
+        }
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "bytes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 66,
+          "maxLength": 66,
+          "pattern": "^c_[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32768
+        }
+      }
+    },
+    "next_ids": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "account",
+        "ticker",
+        "transaction",
+        "brokerage_user"
+      ],
+      "properties": {
+        "account": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "ticker": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "transaction": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "brokerage_user": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    }
+  }
+}

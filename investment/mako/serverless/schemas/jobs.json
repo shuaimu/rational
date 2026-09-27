@@ -1,0 +1,138 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "commandId",
+    "kind",
+    "input",
+    "inputHash",
+    "state",
+    "generation",
+    "attempt",
+    "createdAt",
+    "updatedAt",
+    "dueAt",
+    "leaseUntil",
+    "worker",
+    "checkpoint",
+    "cancelRequested",
+    "result",
+    "error",
+    "artifactsExpireAt"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^j_[a-f0-9]{64}$",
+      "maxLength": 66
+    },
+    "commandId": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "excel",
+        "snaptrade",
+        "register",
+        "prefetch",
+        "cache-clear",
+        "summary",
+        "portfolio-command"
+      ]
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "inputHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "maxLength": 64
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "running",
+        "committing",
+        "retry",
+        "completed",
+        "failed",
+        "cancelled",
+        "needs-attention"
+      ]
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "createdAt": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "updatedAt": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "dueAt": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "leaseUntil": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "worker": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 128
+    },
+    "checkpoint": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    },
+    "cancelRequested": {
+      "type": "boolean"
+    },
+    "result": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 128
+    },
+    "artifactsExpireAt": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  }
+}

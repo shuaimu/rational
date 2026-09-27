@@ -1,0 +1,13 @@
+[package]
+name = "robinlab-core"
+version = "0.1.0"
+edition = "2021"
+
+# Pure portfolio/analytics calculations. NO sqlx / tokio / reqwest / pyo3 —
+# must stay compilable to wasm32-unknown-unknown.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+serde_json = "1"

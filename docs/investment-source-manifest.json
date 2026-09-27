@@ -1,0 +1,1233 @@
+{
+  "sourceRepository": "shuaimu/robinlab",
+  "sourceCommit": "414c2fa1ccde3596efb68c8f7c2030340e8109dd",
+  "source": "reviewed working tree, including completed Mako migrations",
+  "rationalBaseCommit": "a02f9fc2cf38b9f4926327473694f163f791df37",
+  "excluded": [
+    "credentials and .env",
+    ".local",
+    "databases and backups",
+    "logs",
+    "dependencies and caches",
+    "frontend seed data",
+    "operational provisioned metadata"
+  ],
+  "files": [
+    {
+      "path": "src/api/accounts.rs",
+      "sha256": "240bc622b98e95c5de8eac0a0f01da7c8f157799d0d45b6addd7c6aacda7aee2"
+    },
+    {
+      "path": "src/api/admin.rs",
+      "sha256": "4c4d521fbce2aeed6eb3ae3e5b04f84887de96cb1d2b921f56fe7215edc1385d"
+    },
+    {
+      "path": "src/api/analytics.rs",
+      "sha256": "9ad15eddd91006c81c2a277d51d3040b6c684cba8f52233eafb033060fb54764"
+    },
+    {
+      "path": "src/api/cloud.rs",
+      "sha256": "c7645fd7a2fc63e264b8a187128d7ca3486fba34289027e92069bd813f7e9fff"
+    },
+    {
+      "path": "src/api/cloud_admin.rs",
+      "sha256": "ebafc7b44ef6480243e90127d664b5f15ac1843e361e8131cdd656dc6833c651"
+    },
+    {
+      "path": "src/api/cloud_snaptrade.rs",
+      "sha256": "357dde1e27c808c01ff2701f800f006e7912e0ba94b7dda31eb90f4696adcabf"
+    },
+    {
+      "path": "src/api/import.rs",
+      "sha256": "f4c4de0becd026215057e7e149c5b0e4438b50b36d3eb108c697a2c521bb9b29"
+    },
+    {
+      "path": "src/api/mod.rs",
+      "sha256": "c754b1d8aa06b52df7c6a7d9c46a9c418484286750097f8f523ba4bc24eff599"
+    },
+    {
+      "path": "src/api/positions.rs",
+      "sha256": "18518e600eb4746ffde7f786ae5b47e094b33e48fd137d90535c10dd0b71810e"
+    },
+    {
+      "path": "src/api/prices.rs",
+      "sha256": "9780e9836f16becc5eb6634f689025b03ebf848e24d58c7a6eaed5452b466617"
+    },
+    {
+      "path": "src/api/routes.rs",
+      "sha256": "2a13c6896dca491fa825e6076520dc579c1a0b8b72139a1b7664ec862798fc76"
+    },
+    {
+      "path": "src/api/snaptrade.rs",
+      "sha256": "1f4245e0dd620ac54cebc3921c8b539ae4153700098becf07a3379b144421efe"
+    },
+    {
+      "path": "src/api/tickers.rs",
+      "sha256": "0b12becced8b7fdefddfcfcea9a37d2e1b738796e483bf8bbbf2f2034a739974"
+    },
+    {
+      "path": "src/api/transactions.rs",
+      "sha256": "6b7447b490de2c05d35a81821ebfb9dd594f783a4a41fbf7f8bf36850c0016b8"
+    },
+    {
+      "path": "src/config.rs",
+      "sha256": "489b8d3a163896ff9c65f97580b077192bbafed54573618da6d0fea4e9b50929"
+    },
+    {
+      "path": "src/db/mako_cache.rs",
+      "sha256": "4f94b46ec051d2341b90ffef5ae4d4c24469d37070a7ecfede275c0ba9805fdf"
+    },
+    {
+      "path": "src/db/mako_client.rs",
+      "sha256": "ccab3bf4336516583d24cd835e7270ca38ae2e0d422aaca039f0bdfa3fbe0fcd"
+    },
+    {
+      "path": "src/db/mako_repository.rs",
+      "sha256": "ef96d69fd5ae3a71f937a0354d3420ddbf7244cb90128de3047bde92e951f1c7"
+    },
+    {
+      "path": "src/db/mod.rs",
+      "sha256": "c1e310c34a443c4040cfad0c482b66874d008f464b506f1a87847cbafa48aa64"
+    },
+    {
+      "path": "src/db/models.rs",
+      "sha256": "6f27d537028485f4b1fad34afe4bf4540a89c6cf7a629f68ed037997e04e9701"
+    },
+    {
+      "path": "src/db/repository.rs",
+      "sha256": "a9317f45e74148e8b16208c05144ceba00974899d4208c69135353be56471db7"
+    },
+    {
+      "path": "src/db/repository_format.rs",
+      "sha256": "9cd6d168f436c8aea401ec46840eab4babe3e723a5efac4701b4c06684c6d7a0"
+    },
+    {
+      "path": "src/db/schema.rs",
+      "sha256": "6d565db816ed8331efd945841800fa8f3ab88895651b724142467e145eb45676"
+    },
+    {
+      "path": "src/error.rs",
+      "sha256": "30b2cdcc313bd072d0258a0837314be6859dfcf1c4b5c05d4f2639786f2e9b5b"
+    },
+    {
+      "path": "src/main.rs",
+      "sha256": "d666c189a7bc798b632924ab4b7164889a0dcd76f174d69d2170dbbedbd0d9ad"
+    },
+    {
+      "path": "src/migration.rs",
+      "sha256": "c57eee9b1afc22cb30c797c59cbfab24e5182c15e4cbf5068e155a2f1d9b9f45"
+    },
+    {
+      "path": "src/services/analytics.rs",
+      "sha256": "bf53e9d4de8a666713dcb8c80d0a6a850e893e9ed6ea79585be437f6c9493166"
+    },
+    {
+      "path": "src/services/cash_equivalents.rs",
+      "sha256": "2a51da41386126100b00f0356ce043ab8e6c2cb7f4dd18713a690019a268ea20"
+    },
+    {
+      "path": "src/services/import.rs",
+      "sha256": "b6ebfbeff35b3e1f7cfd9d30bb9327a760bf4a7d47d22ad3ee62b77d57f3143b"
+    },
+    {
+      "path": "src/services/ingest.rs",
+      "sha256": "c03a075dd0c60d02cace68d764f3ddb32d2df19f5a0f37414ae03ba1d984f871"
+    },
+    {
+      "path": "src/services/legacy_market_store.rs",
+      "sha256": "370e67b3623ecdd17cbbb6bb328e430e733eed92a741098d4d66ef64ad71654e"
+    },
+    {
+      "path": "src/services/market_data.rs",
+      "sha256": "d939b2bca0d57f11c5c9352216610b02b613f03bba5284b181e16ee844a823ca"
+    },
+    {
+      "path": "src/services/mod.rs",
+      "sha256": "b53985b49c688a1bc6ef37f17184056a97c0e0291e44f6b0ebff65e66d90fd9d"
+    },
+    {
+      "path": "src/services/portfolio.rs",
+      "sha256": "90ed1d724522acc0d4fc3dfd4c2fcc9e07d927d11595d3540dd4124236ca4970"
+    },
+    {
+      "path": "src/services/price_store.rs",
+      "sha256": "c1b218610ca41bce0ccba864fac025a85d5d6845b3202843cc09b5e856e6207a"
+    },
+    {
+      "path": "src/services/repository_calculations.rs",
+      "sha256": "c66d4e7714bd84e4030010a21019665c8052a4b277246904c73a510b682e4d8b"
+    },
+    {
+      "path": "src/services/repository_ingest.rs",
+      "sha256": "5415f765e1cceee792269319d165cdd4e9c5b0a042596be99d1bed2bd474359a"
+    },
+    {
+      "path": "src/services/repository_ops.rs",
+      "sha256": "f16a4bc46ecc6d8230400b65ae78a3a3d9a41efa383c68256d038c885ea2462b"
+    },
+    {
+      "path": "src/services/repository_snaptrade.rs",
+      "sha256": "33e803476b5be61a8a7344fa90aafe524e901aaa347d7c45c4be7e076baccf0f"
+    },
+    {
+      "path": "src/services/roll_apply.rs",
+      "sha256": "e9f5c9ccd5238b60f9df5ed4d61b7908d94f2a3d68a40d197cd22487f58eadb5"
+    },
+    {
+      "path": "src/services/roll_detect.rs",
+      "sha256": "2d96921e63e8828505965382f3bba12bb448891257c1738863d50c10531bc33f"
+    },
+    {
+      "path": "src/services/runtime_journal.rs",
+      "sha256": "88c45739962fabeb767b9c78b2fe8ef0bc8ea453e246d0e8425e48222e4354c1"
+    },
+    {
+      "path": "src/services/snaptrade.rs",
+      "sha256": "441e467ec5da6b6a7ed98ded91dc9e6e19444993eb4b4804724a706b311dcb31"
+    },
+    {
+      "path": "src/services/splits.rs",
+      "sha256": "c7f3108b10c54acbaa5e4e7f6a5d2548cee80ec006685f71ec4e709f2ba7102b"
+    },
+    {
+      "path": "src/services/transaction_requests.rs",
+      "sha256": "4289760b3c9deb193c14cd52e5c3d88c6e58ce948c4e8cb80a4a7b228b7999e2"
+    },
+    {
+      "path": "crates/core/Cargo.toml",
+      "sha256": "4aaa7fe214ac27bb5e8a945aa9b67184bcce764b4d3b0a8f2d3ef7935fb2897c"
+    },
+    {
+      "path": "crates/core/src/analytics.rs",
+      "sha256": "ad3a0b3611213496a5104154e47c6cd4386d62273d25d004d64d098a943c6630"
+    },
+    {
+      "path": "crates/core/src/broker.rs",
+      "sha256": "eea70be34cc973116bc035bea8d79b204475a8db37de5687929f2e3dd22fc196"
+    },
+    {
+      "path": "crates/core/src/cash.rs",
+      "sha256": "35b7ecd7c4082956f1bf62bf1a6c7c188fd830e67739b2facc3997de5aabc29b"
+    },
+    {
+      "path": "crates/core/src/enrich.rs",
+      "sha256": "5edc5ae9608a7a2439f0ceb1b3695d46db7919dc3cf698daa5048827be648bc3"
+    },
+    {
+      "path": "crates/core/src/leverage.rs",
+      "sha256": "c358d5bb3a8673f796a9228c2319aa6a2da0ea8d5c21e421edb1f7ed2518d96f"
+    },
+    {
+      "path": "crates/core/src/lib.rs",
+      "sha256": "ffa07561673f7e9eec5ed71d120bec87a90b1ca44be126565d5d393c1c88e492"
+    },
+    {
+      "path": "crates/core/src/models.rs",
+      "sha256": "90a137b669f692e3f252decff928b96c8556a02e62eeee2acc1d47d61463aa26"
+    },
+    {
+      "path": "crates/core/src/option_ops.rs",
+      "sha256": "410c990ee3cc9a55a4cf63069a38592b4a517f486af5b8adb07a28b4fcbb6bdf"
+    },
+    {
+      "path": "crates/core/src/performance.rs",
+      "sha256": "4bc787c837215ffa1f9245ba39928dad2248f2d391f305ac0663d45f6cee78b9"
+    },
+    {
+      "path": "crates/core/src/pnl.rs",
+      "sha256": "c5a3e448ebf80570d70e587ddf9b7f7a4fcb09cb6fa57a021fb2865aad9c6e5d"
+    },
+    {
+      "path": "crates/core/src/positions.rs",
+      "sha256": "ffbafcc3ffbf1f627b4e6c86182691742c3e7a02fdfc75918a72f0994473b3b1"
+    },
+    {
+      "path": "crates/core/src/reports.rs",
+      "sha256": "0b431976e31096d27f6544feb978a9b1d12e13dd6b72ba5ba179b65b77e0c02a"
+    },
+    {
+      "path": "crates/core/src/splits.rs",
+      "sha256": "19d6f76ed650ff25efec3cc4900c651ed815afaa4a370247107c60b82de81ddf"
+    },
+    {
+      "path": "crates/core/tests/enrich_diff.rs",
+      "sha256": "24fd27f154b9bcdafe0d9b4856c53888b9e115860ccf62d1fa429349dbef3863"
+    },
+    {
+      "path": "crates/core/tests/performance_diff.rs",
+      "sha256": "5417a38546ea9e2b4aa4cf0f59f5c3cd9655851d865e3711ea4e5b266d1dbfc0"
+    },
+    {
+      "path": "crates/core/tests/pnl_diff.rs",
+      "sha256": "b88c5af5d50982dc806d067e88868e5c2ed00f9d62a690ed884c340a1df745a1"
+    },
+    {
+      "path": "crates/core/tests/positions_diff.rs",
+      "sha256": "853a89de2e44e9305cdf591b9f05722861d42a6aa495ca8bc106baa3bd95c8b1"
+    },
+    {
+      "path": "crates/domain/Cargo.toml",
+      "sha256": "bef723adf177de1829bdbae63bf812a7888283bfda4828bdfb8c69eabc15f69d"
+    },
+    {
+      "path": "crates/domain/examples/invoke.rs",
+      "sha256": "2eb49fb6f9ed8abc0f11f3444c4ce3df71033f059ab220317c8a8b88be85a6a3"
+    },
+    {
+      "path": "crates/domain/src/broker.rs",
+      "sha256": "4642e6bc567d855b5f0ee7e3ec90867357e73ba75bf394abf541dd2f792d4fe4"
+    },
+    {
+      "path": "crates/domain/src/broker_management.rs",
+      "sha256": "0396a45aa29edd666deb6c5535deb8de76ca0b3947a03261f34bedd16e16b263"
+    },
+    {
+      "path": "crates/domain/src/cache_reports.rs",
+      "sha256": "2121c2e4b3d681708402f8909fe3a890ac664ba23e3a3accfb096e09c32b44eb"
+    },
+    {
+      "path": "crates/domain/src/error.rs",
+      "sha256": "18d093614578f75499a366a63c5f54c9629ab3ee67f8cdae9dfa1f1f78e06752"
+    },
+    {
+      "path": "crates/domain/src/fixtures.rs",
+      "sha256": "91f3f9cda5b8e1487f9dbf0cc1183ce762f2bc28dc1c80014f7cc16219fc4b6a"
+    },
+    {
+      "path": "crates/domain/src/ingest.rs",
+      "sha256": "5a28a975b8a39664dcecd8fee5d7d8c80c5c002dc5289649b37d34fee6b40493"
+    },
+    {
+      "path": "crates/domain/src/interface.rs",
+      "sha256": "a904079b1e7780220786df7d2b18b7316d0c9de05b3dfa5bd5eccd2bb199efb6"
+    },
+    {
+      "path": "crates/domain/src/lib.rs",
+      "sha256": "4e7363faa0a4409c46ff8b7760e2c2cbe714009c98f42c361a6cacbcf6cc5c22"
+    },
+    {
+      "path": "crates/domain/src/market_calendar.rs",
+      "sha256": "be1160234505d6e19bd540383d16a96ce72aa0d753bca761188e7e783bb14ff2"
+    },
+    {
+      "path": "crates/domain/src/market_prices.rs",
+      "sha256": "8a28cd412b3d682975f0c3a30ab3a7eeba3670414ddcbfb73801f40899bc53e9"
+    },
+    {
+      "path": "crates/domain/src/models.rs",
+      "sha256": "f59cf759480e95a1ebdd432b660688d2f2641c5007a1cdadcffaf08ae1687d66"
+    },
+    {
+      "path": "crates/domain/src/repository.rs",
+      "sha256": "df57c30fc4a8794558d02cdb968d2089741c525e4c418a165ca19a907ffe74d6"
+    },
+    {
+      "path": "crates/domain/src/repository_calculations.rs",
+      "sha256": "afc08d31d559f0debed007483f0128fc32dcdd66f3bbb1f384599a4ba9b1a04f"
+    },
+    {
+      "path": "crates/domain/src/repository_format.rs",
+      "sha256": "3be58ae7450766ad0b81d5850da18f1102c9be2f4e033a040f21ae1f8673c5fd"
+    },
+    {
+      "path": "crates/domain/src/repository_ingest.rs",
+      "sha256": "feed33379b43492a9f4dc0804d43eb1d72a679fbd01fa3c15d9c99e21b71407e"
+    },
+    {
+      "path": "crates/domain/src/repository_ops.rs",
+      "sha256": "62efc54968a9a2020cee4b98aa959916e7b30e007e32a3738e056918c06faac5"
+    },
+    {
+      "path": "crates/domain/src/repository_snaptrade.rs",
+      "sha256": "68205bd156fcc0f748b3260981788368ee21b4c716d4f943166cbbfe7b3ef026"
+    },
+    {
+      "path": "crates/domain/src/roll_apply.rs",
+      "sha256": "98288f32c6d7c4d522657513f862aa6871a0e5b5de08e306b7e969732af0734e"
+    },
+    {
+      "path": "crates/domain/src/roll_detect.rs",
+      "sha256": "7a72c860dda86879387d773970854df78ac93462ba78e218a871edc489c6358a"
+    },
+    {
+      "path": "crates/domain/src/snaptrade_activity.rs",
+      "sha256": "b7777b862cc7534106b01aa27dfa45295f3150b9dec9aee931bf80a472296236"
+    },
+    {
+      "path": "crates/domain/src/snaptrade_capture.rs",
+      "sha256": "e36145168603db6ba1efde2a3b15063c72a0c218421c2d7a4e48bf82794a3f5d"
+    },
+    {
+      "path": "crates/domain/src/sync_options.rs",
+      "sha256": "df9930ac15beb25beb8f82d415f85fb086a6d51f62b2f1d599e7503e0e5b2b9d"
+    },
+    {
+      "path": "crates/domain/src/transaction_requests.rs",
+      "sha256": "dde9f4846bb8581e113d852525b3741f8af0515c1c7c68a1090fbfdf67abe843"
+    },
+    {
+      "path": "crates/domain/src/workbook.rs",
+      "sha256": "8151b097d61a980d7490038e70ab09b4e98a7f0e5ed9cbbfeb9efae955fa9d1d"
+    },
+    {
+      "path": "crates/domain/src/workbook_limits.rs",
+      "sha256": "73ae10a2a688a93f79ed4d9f077d8dc030626c75844202556566bb33e72c28be"
+    },
+    {
+      "path": "crates/function-wasm/Cargo.toml",
+      "sha256": "558c74b215c23f73ad2e85b4371ac0c6d749173821b714d6a80e58ce1e5007d2"
+    },
+    {
+      "path": "crates/function-wasm/src/lib.rs",
+      "sha256": "eb48840495df032220800e84eccf6302774870edab07786ae8b7554ed6333406"
+    },
+    {
+      "path": "crates/wasm/Cargo.toml",
+      "sha256": "8f1b489b1e190a530e6f1766f990f055f5cdefb6df16babe6b450211d53969c8"
+    },
+    {
+      "path": "crates/wasm/pkg/.gitignore",
+      "sha256": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1"
+    },
+    {
+      "path": "crates/wasm/pkg/package.json",
+      "sha256": "bf0e564d99c57e79c49ea939b3d647491b34def94741064b8dab05946181c783"
+    },
+    {
+      "path": "crates/wasm/pkg/robinlab_wasm.d.ts",
+      "sha256": "829e1b035d79de18a3dd18ef76fa21ccaebb82363383e8c8175ac3fe51960377"
+    },
+    {
+      "path": "crates/wasm/pkg/robinlab_wasm.js",
+      "sha256": "3c996c05902b78efb3e16a98a07ecc585cfd33bcdc029601b0b62790ec391e10"
+    },
+    {
+      "path": "crates/wasm/pkg/robinlab_wasm_bg.js",
+      "sha256": "ff5d6e9661d0423efc0402b8a61b501ef72362e06ccad7dc3ab115679d24ecfd"
+    },
+    {
+      "path": "crates/wasm/pkg/robinlab_wasm_bg.wasm",
+      "sha256": "0155956ca5724c2f99d1673e400eaddc261023adbfd75c142ea57944aa3ae827"
+    },
+    {
+      "path": "crates/wasm/pkg/robinlab_wasm_bg.wasm.d.ts",
+      "sha256": "a0d6cd7425902e0dc5ad9a6692e2b9f165793bc0cd7f688bcae4637cbc35ba1d"
+    },
+    {
+      "path": "crates/wasm/pkg-node/.gitignore",
+      "sha256": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1"
+    },
+    {
+      "path": "crates/wasm/pkg-node/package.json",
+      "sha256": "ce737527ee1f4854dc848bed128b23d096612769d799f0bd3c07cf9155f7edc5"
+    },
+    {
+      "path": "crates/wasm/pkg-node/robinlab_wasm.d.ts",
+      "sha256": "f1f3ed92ccfb6865f0697e100721a1b5fada5f0cf21b198c67c2f6325e125328"
+    },
+    {
+      "path": "crates/wasm/pkg-node/robinlab_wasm.js",
+      "sha256": "2df6792687d56d605877f6589d4d74e55f5f28ee7811560f0f94999e80d76cb5"
+    },
+    {
+      "path": "crates/wasm/pkg-node/robinlab_wasm_bg.wasm",
+      "sha256": "374d7bd404ebdc93598419c70b6ba75a6ec68bbbc0cbf3ba39dcfd786ab3fef8"
+    },
+    {
+      "path": "crates/wasm/pkg-node/robinlab_wasm_bg.wasm.d.ts",
+      "sha256": "a0d6cd7425902e0dc5ad9a6692e2b9f165793bc0cd7f688bcae4637cbc35ba1d"
+    },
+    {
+      "path": "crates/wasm/src/lib.rs",
+      "sha256": "2c9bd669387b7ea9c95c81c8f61d3deb2c340268e658452d204796941e3c1b6f"
+    },
+    {
+      "path": "migrations/001_initial.sql",
+      "sha256": "a9892905f07ccc3b99f458c9e009807e87afd21281b688a13f4dbac32039b043"
+    },
+    {
+      "path": "migrations/002_price_cache.sql",
+      "sha256": "195486a4e6082541560b8a432afb0918c3d26d55418bb7f356bf0f2d022d3e36"
+    },
+    {
+      "path": "migrations/003_provider_request_log.sql",
+      "sha256": "249ebebdb450e7e6ae7efcbeb0baa8858105f7d91fbf56f2bb35b4d1cd422f7e"
+    },
+    {
+      "path": "migrations/004_latest_price_cache.sql",
+      "sha256": "d93f12ad401eb53f92db877ba36199d61dfcc65e747374264892d50b194b3866"
+    },
+    {
+      "path": "migrations/005_price_cache_market_close.sql",
+      "sha256": "c8b11793037674ce34b066a407a0d18e40bc27c72c29bc94e6fddaa750422024"
+    },
+    {
+      "path": "migrations/006_snaptrade.sql",
+      "sha256": "3c02245cd15e2c6a842c4ac0acf9524267faf1380f17489094e26cb7d231b284"
+    },
+    {
+      "path": "migrations/007_transaction_source.sql",
+      "sha256": "2a84259de323534cb285f22df3d82518bc18f61f113068b142892f8027315069"
+    },
+    {
+      "path": "migrations/008_merge_fb_meta.sql",
+      "sha256": "7f4c61333186182ac76efaf3d1a35d449173a4eba21040941ed70a8be2b8cb7b"
+    },
+    {
+      "path": "migrations/009_ticker_splits.sql",
+      "sha256": "3447ca75504198b85d218cce6a06d7b28f9cc84fea84ed14ae7634cdeae7bac1"
+    },
+    {
+      "path": "migrations/010_snaptrade_balance.sql",
+      "sha256": "c7af6157f8b8e9faba52691c5b851df3950b6f936d95c2026412eee3b4b90a7c"
+    },
+    {
+      "path": "migrations/011_account_value_snapshots.sql",
+      "sha256": "66d9e157430423f88f01d6e4426e32010364037eb485e4a197f0b3912dc083fe"
+    },
+    {
+      "path": "mako/README.md",
+      "sha256": "e8d264aa8dbffd375116769fccf98ad1f1356c53454cc3f1bfffde3704a7b5ad"
+    },
+    {
+      "path": "mako/environment.json",
+      "sha256": "1e85f7517ae51990aa399c2c3bc612439ca0fa228a3e5f8e24fbae83053b4286"
+    },
+    {
+      "path": "mako/functions/qualify/handler.js",
+      "sha256": "b8e7e24e9e8e28a1d417a5ae495391eaf237c5dcaef28eab7fc8779f635231d3"
+    },
+    {
+      "path": "mako/functions/qualify/index.ts",
+      "sha256": "a99925278e90947244f83107677388f9f0e0aa60072e8af8e7c9c2201c898d9f"
+    },
+    {
+      "path": "mako/functions/repository/cache.js",
+      "sha256": "6ce0b187cfdc8aefc0a551c20cde04cda4850ec311e1137e9fe17cc47c008238"
+    },
+    {
+      "path": "mako/functions/repository/config.json",
+      "sha256": "fdf743d75dcb6e8d59d1b1304bfc33809e546b42c91b17432af73d007a867d01"
+    },
+    {
+      "path": "mako/functions/repository/handler.js",
+      "sha256": "d33df97302f2c2e9192b71bafef502904d02a67501445619dbf9f56685496f7c"
+    },
+    {
+      "path": "mako/functions/repository/index.ts",
+      "sha256": "123f142fae5d0aafd0e5fee6d3b4a5e64e8abfa36dd827b27e932e4fa6d8e011"
+    },
+    {
+      "path": "mako/qualification/deny.policy.json",
+      "sha256": "8772df49af2416bdf2f4881dd6f70452b3a0a8c31cf93f4aa1d7cb40ba0537a4"
+    },
+    {
+      "path": "mako/qualification/heads.schema.json",
+      "sha256": "ddc6df95374ae45f32c37b7ac79de556e0e4d0698a72a458179342000212b774"
+    },
+    {
+      "path": "mako/qualification/large-parts.schema.json",
+      "sha256": "7a10b5e2c42136d93afb7bf02e4d53621806c41c4654a03e23e88446d8668e5e"
+    },
+    {
+      "path": "mako/qualification/parts.schema.json",
+      "sha256": "fb452d9e41bfa22989d5fa0fc1d013648adf4115c8c705ab09965226f9c660d2"
+    },
+    {
+      "path": "mako/qualification.md",
+      "sha256": "03ddbed1e2edd61d451a1b9214619f023c504c6982fe2e3ca8405891b7b82ff2"
+    },
+    {
+      "path": "mako/runtime.json",
+      "sha256": "5265641648657238bd7e22643c97c2f499f25692a75a51538f2223e468408ea7"
+    },
+    {
+      "path": "mako/schemas/content.json",
+      "sha256": "0d05455054b6162ec3120b885410f38a23a97001c099fe5918f038d7dec59d23"
+    },
+    {
+      "path": "mako/schemas/deny.policy.json",
+      "sha256": "8772df49af2416bdf2f4881dd6f70452b3a0a8c31cf93f4aa1d7cb40ba0537a4"
+    },
+    {
+      "path": "mako/schemas/head.json",
+      "sha256": "31b93688d2a76a85e2b5e3fb7ecd2addb9080c82bff1b2eaa2bc1cbd23e16b88"
+    },
+    {
+      "path": "mako/schemas/historical_prices.json",
+      "sha256": "ca52cbcce2249f99eadc3e86bb9b14e9544c8b655c95da058603b91f2155bd80"
+    },
+    {
+      "path": "mako/schemas/latest_prices.json",
+      "sha256": "2fddb054be0cdc58dc604f1f7d91863a41ed4a328b446e9a2080af1f5fd01ec0"
+    },
+    {
+      "path": "mako/schemas/owner-read.policy.json",
+      "sha256": "b586207fb2b7ff5c9b19026b952013ecdf442c8a305a7d5dba02fd748a32dadf"
+    },
+    {
+      "path": "mako/schemas/provider_requests.json",
+      "sha256": "109df6ec7174bd9a466300915a261893413505d5451a3075f2e78eb972411bc3"
+    },
+    {
+      "path": "mako/schemas/split_fetch.json",
+      "sha256": "0cde1c4b9b01f801fc1961f9ca0607f9a30a56f4483626073ee9a205fc7ae1c5"
+    },
+    {
+      "path": "mako/serverless/README.md",
+      "sha256": "181b9095cead09d7cafbb2ada6643e1318ddd24f02b56dc3f8ca683c9d9abd43"
+    },
+    {
+      "path": "mako/serverless/api/admin.js",
+      "sha256": "ec39b6e4ec3ee722c9fcf5fc0a7c1ea4003f38e5d2f7bb6909680917087c2358"
+    },
+    {
+      "path": "mako/serverless/api/broker.js",
+      "sha256": "0261f6d147c77410088566e93dda3c3b8333e803519c059bcb643198f3ad9435"
+    },
+    {
+      "path": "mako/serverless/api/config.json",
+      "sha256": "e970cf827db3c7f99bfbf345a32537af2de1db20db4bf3dbe85a5228c4573953"
+    },
+    {
+      "path": "mako/serverless/api/handler.js",
+      "sha256": "b1de17a428cc641601af75c2c125b6c2e282f43563346f0b670daf44bd3543e5"
+    },
+    {
+      "path": "mako/serverless/api/index.ts",
+      "sha256": "0b3f4302d4bbe95ec604516ea98b4f836bbe7c62b2886a6f6626f49191ac6cb4"
+    },
+    {
+      "path": "mako/serverless/cutover-runbook.md",
+      "sha256": "f3d436e88e5c3db5a578ff885b59f2128ca1e826a1412c9255182ace4a191118"
+    },
+    {
+      "path": "mako/serverless/generated/manifest.json",
+      "sha256": "e72c16e7d30d7737f6d8bde1d768644da0469d9678ba2650faf30c17545b7e10"
+    },
+    {
+      "path": "mako/serverless/generated/robinlab_function_wasm.d.ts",
+      "sha256": "b486d1cbd37701d965c73e0edae3adeaa5115938ad5cb523100d0780641e0784"
+    },
+    {
+      "path": "mako/serverless/generated/robinlab_function_wasm.js",
+      "sha256": "0509828dffa61a3befd5ad6dea2b04bf5eb5b9849b542159158972974e0d9472"
+    },
+    {
+      "path": "mako/serverless/generated/robinlab_function_wasm_bg.wasm",
+      "sha256": "0221489eceaa7c166c8605dfd83c4f786c7c837b3a75672e9c1233fa9b2d558c"
+    },
+    {
+      "path": "mako/serverless/generated/robinlab_function_wasm_bg.wasm.d.ts",
+      "sha256": "feef387a7b7bb744052cc303f1787a04389a65b6e144356ab117ebabc34f056e"
+    },
+    {
+      "path": "mako/serverless/inventory.md",
+      "sha256": "f5989e97f264e6f024abd918d555dec3026118a96d94234566814a6cc7fbe661"
+    },
+    {
+      "path": "mako/serverless/jobs/cache-maintenance.js",
+      "sha256": "d085795d169b3cfe4bab4c8cc2576e61a42c7802967adc4a8ff3fc6ca179ee3b"
+    },
+    {
+      "path": "mako/serverless/jobs/cache-reports.js",
+      "sha256": "3cc0ac8d24e307c9bb379f1cbd7d81d627bea217de24968d2550c3d7175f4906"
+    },
+    {
+      "path": "mako/serverless/jobs/cleanup.js",
+      "sha256": "f4c9dfcdec23ada1906dac528456ef22e9e2f2e5c5a3f62e04bd45a684936a79"
+    },
+    {
+      "path": "mako/serverless/jobs/config.json",
+      "sha256": "55533b7237859b4f757cd64481b1d1b9e4c58fdc0be9592cbf636e16def4649c"
+    },
+    {
+      "path": "mako/serverless/jobs/dispatcher.js",
+      "sha256": "20a679376c11435b3d14aa745a32882908d9472fd640bcaec05a99853b40ad1d"
+    },
+    {
+      "path": "mako/serverless/jobs/index.ts",
+      "sha256": "6bb29ad511fec41e503647197c45210d7a7a70b4a7870493030b3f32c4ea528e"
+    },
+    {
+      "path": "mako/serverless/jobs/snaptrade.js",
+      "sha256": "e18a6f307a883cc640297be1da548ba677ddb9d8af2d58750c53a97a2b6a0b81"
+    },
+    {
+      "path": "mako/serverless/jobs/worker.js",
+      "sha256": "6322a295b37986cf4a390049ead61df270c7acb0ff8f7c5bdd27e57e6d1a197a"
+    },
+    {
+      "path": "mako/serverless/qualification/config.json",
+      "sha256": "0149e4b18820b29a8ef5e4a810a91dbe19dc65405c1f5d39220a474dfe67d8bb"
+    },
+    {
+      "path": "mako/serverless/qualification/index.ts",
+      "sha256": "af037129f781706a96212a7a355e8cd96b249e3299d2dc53d623fa2b9771b577"
+    },
+    {
+      "path": "mako/serverless/qualification/portfolio.ts",
+      "sha256": "d3caa60ba30de0286d72d5ba3a73fd60a8ae4e6a95f0b5d5a94bc690fa9a51fc"
+    },
+    {
+      "path": "mako/serverless/qualification/workbook-fixtures.json",
+      "sha256": "0d0f16f8e6b86ba8eb0c37965ac0581d8725d821a7dd0409031ac5c3810aab4c"
+    },
+    {
+      "path": "mako/serverless/qualification/workbooks.js",
+      "sha256": "2d1f1a225e78d815240955619962d5af217449686ea3dd1956b10f3b95a5b0bd"
+    },
+    {
+      "path": "mako/serverless/schedule-qualification/index.ts",
+      "sha256": "0a74651f8e1506992bed19ae5097c313ddd655894b7f7b74037a6ff5562c9816"
+    },
+    {
+      "path": "mako/serverless/schemas/cache_status.json",
+      "sha256": "8585d4dc58de91ae4ce1f7b5b9d72979fab584a9c3e5104b4aa3153664309e32"
+    },
+    {
+      "path": "mako/serverless/schemas/coordination.json",
+      "sha256": "b057c863d164eb5b8038717b099376c2df6331b3e262a184824884c281e84596"
+    },
+    {
+      "path": "mako/serverless/schemas/counters.json",
+      "sha256": "581f751dbd5f1adc3df7bfe07bc7e44e0191a4966dc3dc32ca9e54d812457cb1"
+    },
+    {
+      "path": "mako/serverless/schemas/inputs.json",
+      "sha256": "f36ed02dbc660082dacddd120efe63e96ad2bd0f17dd79ba54cb3c255fbddc1c"
+    },
+    {
+      "path": "mako/serverless/schemas/jobs.json",
+      "sha256": "871e914f1dc967eecd5a0adb342de2d65860dfed3d71ddd90e988f5a4b159476"
+    },
+    {
+      "path": "mako/serverless/schemas/lanes.json",
+      "sha256": "45a2bef971ecb84f95eb174fa47e0133c545f1895a82f030e0e194a59533e3e3"
+    },
+    {
+      "path": "mako/serverless/schemas/uploads.json",
+      "sha256": "3e7dbd2c0450f26148d3c0f1521b8cd0df1553d6d50028688612c37aade063d7"
+    },
+    {
+      "path": "mako/serverless/shared/artifacts.js",
+      "sha256": "af2481577590356ce39ee2539d85c51f1eb9a5cbd31cd7b212446883ee51d166"
+    },
+    {
+      "path": "mako/serverless/shared/cache-generation.d.ts",
+      "sha256": "6a8c9c83c7dd0a36046f1b9c8d93a96640285de17699b867dafbcc677866a15c"
+    },
+    {
+      "path": "mako/serverless/shared/cache-generation.js",
+      "sha256": "f0e91547276fbc2092d6760d3fc30bce92011dca327c48524cce738c4b8d3a6e"
+    },
+    {
+      "path": "mako/serverless/shared/cache.js",
+      "sha256": "89c56ac70c6e4e77bb730b5bf15b2a42ea973239b4abcf7019766d8225c0ba5a"
+    },
+    {
+      "path": "mako/serverless/shared/coordination.js",
+      "sha256": "dd55fb469a4bd8634f416ff3d6e7dbb8e1c0227874862c3c973b417133b8a78f"
+    },
+    {
+      "path": "mako/serverless/shared/errors.js",
+      "sha256": "f00a2f9100ff4b9531c64c48c590b5fe8831b9d4c69016591d50d466d036561f"
+    },
+    {
+      "path": "mako/serverless/shared/jobs.js",
+      "sha256": "32c48025fe9551436a9a1f7baa82e446f896dd4bba9f64cac9bcaf1a5d70d836"
+    },
+    {
+      "path": "mako/serverless/shared/price-provider.js",
+      "sha256": "c7aff781ee061f89eb4e6f6d97627fd7533588b00e5fa2039341a53527a45b4b"
+    },
+    {
+      "path": "mako/serverless/shared/provider-log.js",
+      "sha256": "ccb313105cf3e3e92a8270b5101d3bb8ffe6e60a7900f73c9477018a706632c8"
+    },
+    {
+      "path": "mako/serverless/shared/providers.js",
+      "sha256": "a6a062dec3eae8eb64f217eb3aaa0fecdb0ca4c0a3004980bc961743f45efcf7"
+    },
+    {
+      "path": "mako/serverless/shared/quote-admission.js",
+      "sha256": "daa05bcf3b587cb7f4a1ff25a4f8c6b8a835eccca69e1dc4350b65ade0b1247e"
+    },
+    {
+      "path": "mako/serverless/shared/repository.js",
+      "sha256": "27b91d6f3510f214a88bbf690039847080df22ec44e6d7d2bc581807fd71d856"
+    },
+    {
+      "path": "mako/serverless/shared/uploads.js",
+      "sha256": "4846fabdcf99f46db08edde613cc34b0f8d07b50e5565861efd1a0a9a49a4445"
+    },
+    {
+      "path": "mako/serverless/tests/api.test.mjs",
+      "sha256": "060567e7f51594aa7280702cd24f98bfff6a513e3bf11f0333360528a5c6457c"
+    },
+    {
+      "path": "mako/serverless/tests/cache-maintenance.test.mjs",
+      "sha256": "fd2978132ae78b8ce3a525701adf7fdded72d3d4f1eb6c6d7690ae766b900d77"
+    },
+    {
+      "path": "mako/serverless/tests/cleanup.test.mjs",
+      "sha256": "2064414f9a4a89e2f6727382409292c95236442d2ba5f90204d3c98a2fc2f80c"
+    },
+    {
+      "path": "mako/serverless/tests/fixtures.mjs",
+      "sha256": "8d16539a62bdb9954fef0d6affc436350eecc4518ec37a6e38bb1f915aa48c75"
+    },
+    {
+      "path": "mako/serverless/tests/jobs.test.mjs",
+      "sha256": "2c9d8510fcbdc60a19f4c498c1781c3bac9dbf44bb16d07f56bdb4230b8678cd"
+    },
+    {
+      "path": "mako/serverless/tests/providers.test.mjs",
+      "sha256": "72e28e1a935118adac4262c80a40a74604bdf7dffa8c4eaff31a1571dc3bd254"
+    },
+    {
+      "path": "mako/serverless/tests/repository.test.mjs",
+      "sha256": "ba0750bef6a9895c2b40f05151442bb2dce36dfd0ff83b5d0c8432fc3a5cae7d"
+    },
+    {
+      "path": "mako/serverless/tests/uploads.test.mjs",
+      "sha256": "d7bee867a76c56ffbf78bb7ed00e6e9ddac2663d61650ae8eb8ddfc46ecffa86"
+    },
+    {
+      "path": "mako/serverless/tests/worker.test.mjs",
+      "sha256": "d8216bde73c9353aabaaafc2c4c609aece7a2bf153c02149e1b041e68128e600"
+    },
+    {
+      "path": "mako/storage-inventory.md",
+      "sha256": "021fceb704d93fbed135178b951f42f08ce3ff5d70dcd14c891f6927473cacdd"
+    },
+    {
+      "path": "mako/table-map.json",
+      "sha256": "91194853bff43b5eeeee7983251fa5dd746b8a4936cf022a9b0def08f46ed7c0"
+    },
+    {
+      "path": "scripts/build-function-wasm.sh",
+      "sha256": "2491df640fe0a2f16eb383ef8a340e3c6b034a362cfbce12f1cc356b126c55a9"
+    },
+    {
+      "path": "scripts/mako_cloud.py",
+      "sha256": "d721fa067270b75d1826966b75c91fa24972b9e65338fa0250626a9948cfbc0c"
+    },
+    {
+      "path": "scripts/mako_inventory.py",
+      "sha256": "31f9a73b7ecac77df46fadd3fa4990e5c56b4d4745435483cceb72c471774d9a"
+    },
+    {
+      "path": "scripts/mako_migrate.py",
+      "sha256": "730ac82d7dc5d717f6eabbbb6b2f62c3f08160e844132feae32b681e6c188495"
+    },
+    {
+      "path": "scripts/mako_smoke_workbook.py",
+      "sha256": "01e6a1cad06a360cbd612b8e4409ea144d248d36599f0c32d1640f331fde567d"
+    },
+    {
+      "path": "scripts/mako_stage_recover.py",
+      "sha256": "df6d78564aabcd0e6e05ace426897dfc1091a678d39a5caf98d9715559bd2f47"
+    },
+    {
+      "path": "scripts/package-function-api.mjs",
+      "sha256": "81f4c1db999a1d98de31ff6ce2e707588c3a246aae4107d70e23cab38ca42944"
+    },
+    {
+      "path": "scripts/package-function-jobs.mjs",
+      "sha256": "ce2ff5dbd3b703bfe3a895a340718858ebe6cde604cfd1a7d72f577206fc3345"
+    },
+    {
+      "path": "scripts/package-function-qualification.mjs",
+      "sha256": "57b69d56bdbb5994cbdec322cfad624a63918523218585cb20a4e9770ba69e0e"
+    },
+    {
+      "path": "scripts/package-function-wasm.mjs",
+      "sha256": "90e03c2f9133c358e30ec343807d7b7cdb279fe99a120d8e6072980b52cfc898"
+    },
+    {
+      "path": "scripts/serverless-workbook-fixtures.py",
+      "sha256": "91cfe2400bbf4c473299eef7c886527151b2258da85556ced37c0993fc244938"
+    },
+    {
+      "path": "scripts/tests/mako-cache.test.mjs",
+      "sha256": "ca8c726846e3ef7a1ad71c511c9ebb64f9d72044575993d788574a0e1759fb66"
+    },
+    {
+      "path": "scripts/tests/mako-manifest.test.mjs",
+      "sha256": "99acc67f7e78165e661c4e694fa3a683417c41aa059af11c7c18028a81e5f659"
+    },
+    {
+      "path": "scripts/tests/mako-qualification.test.mjs",
+      "sha256": "27e92c375a4b707ff253684781fe4cf601f2db80cc929bf9b6aa59f1a2d689eb"
+    },
+    {
+      "path": "scripts/tests/mako-repository.test.mjs",
+      "sha256": "e3fb6fadc4dd523183cea3d4cee31c7adcea9d5f91f394b618f5cea3da6abcb3"
+    },
+    {
+      "path": "scripts/tests/mako-stage.test.mjs",
+      "sha256": "abeb827272f0a6d466c5e9729894cda32a6a187a7d1d1eaee20726993901c32c"
+    },
+    {
+      "path": "scripts/tests/test_mako_inventory.py",
+      "sha256": "6cab03f93ded341522cfe690687a8df25757edf8a537a2e2d5065125bf25e864"
+    },
+    {
+      "path": "scripts/tests/test_mako_migrate.py",
+      "sha256": "196122b1a6988c674bb2df439e9a95a7e4a9464a8dac5adf47331ca71b6bf9d5"
+    },
+    {
+      "path": "frontend/.gitignore",
+      "sha256": "f2b69c4ca376040ed3fa480f64a121521eece11e8284820bc3b618ad45afc2e5"
+    },
+    {
+      "path": "frontend/README.md",
+      "sha256": "8271bebb25c18e69789f6563117ca63c8ee45016024930db43c8438344fe4cc3"
+    },
+    {
+      "path": "frontend/eslint.config.js",
+      "sha256": "4efe97b16d1200fac0eaf07aa00930a8668b1f96a0be1891ace8c1e712ff0ccb"
+    },
+    {
+      "path": "frontend/index.html",
+      "sha256": "02fca592953c4bcb3d520bc34802f74ea3956b66f8ebeef2e44f484f0ea3616c"
+    },
+    {
+      "path": "frontend/package-lock.json",
+      "sha256": "4db5419966d42ad0ff2296e914cae583b8843b51310e81a53dd973628cdf2d28"
+    },
+    {
+      "path": "frontend/package.json",
+      "sha256": "460707c99a7cf515d9141fa8c87c7c94508678a8b08be1f7f6b47fc558024177"
+    },
+    {
+      "path": "frontend/public/vite.svg",
+      "sha256": "4a748afd443918bb16591c834c401dae33e87861ab5dbad0811c3a3b4a9214fb"
+    },
+    {
+      "path": "frontend/scripts/mako-cache-hosted.mjs",
+      "sha256": "d770efee1146a7c3c87445acd1a8b5cb4c642104aa90cfaa2c3abd4a1dda83a0"
+    },
+    {
+      "path": "frontend/scripts/mako-cutover-check.mjs",
+      "sha256": "2b7be66134a9b8abb6f6d9f184c600b264c15f9e453c4151600ee02a991ddd26"
+    },
+    {
+      "path": "frontend/scripts/mako-cutover-export-verify.mjs",
+      "sha256": "30d123fcb054ca6096f374d717183e62679aa95885b01f74f180c09e07e1f7c9"
+    },
+    {
+      "path": "frontend/scripts/mako-cutover-smoke.mjs",
+      "sha256": "9a59213d64291bd4452765a129738fa3099869bfac45bf00954f3b2526e529f5"
+    },
+    {
+      "path": "frontend/scripts/mako-domain-parity.mjs",
+      "sha256": "063d3cbe31a6d3f306d8d02aecf33557e43654adb8f4fa427f073c5c36e72c05"
+    },
+    {
+      "path": "frontend/scripts/mako-live-replication.mjs",
+      "sha256": "72eb25d8b0e0ce6588438c74404beeac71df1251d7c47fbd4556775392781483"
+    },
+    {
+      "path": "frontend/scripts/mako-local-integration.mjs",
+      "sha256": "34ea6a903140a8915f4d613030b7eca4d3f46e1dec9d6cdea32831926f0128ea"
+    },
+    {
+      "path": "frontend/scripts/mako-qualify-hosted.mjs",
+      "sha256": "ebc1c0e351dfff5b41db949c7ee68591f3bcea3cbb8807a49fc1749570b5d1df"
+    },
+    {
+      "path": "frontend/scripts/mako-repository-hosted.mjs",
+      "sha256": "8bd324288bb1fc347dd2f05a7781996c011ea47960b86166b2bbf9912b2df99c"
+    },
+    {
+      "path": "frontend/scripts/mako-serverless-admin.mjs",
+      "sha256": "88115bf1cc5e47a3d984c5cc0874b138a4923b06de1dcf76192f05017c1ac8ed"
+    },
+    {
+      "path": "frontend/scripts/mako-serverless-api-read.mjs",
+      "sha256": "c8d1dab86942a6fa2d43aa9e11f28fc66334ed6a0a71ea84ef3f66b50a3d2ba4"
+    },
+    {
+      "path": "frontend/scripts/mako-serverless-cleanup.mjs",
+      "sha256": "227b9c81bf8823e2979bd468f64d4391a7102f68e315163011164e597d0ef756"
+    },
+    {
+      "path": "frontend/scripts/mako-serverless-provider-check.mjs",
+      "sha256": "1e0705f247b861f44c9f882bbfc881b87cf95c0c1d76c33aedf339267f6c0f68"
+    },
+    {
+      "path": "frontend/scripts/mako-serverless-qualify.mjs",
+      "sha256": "2b6969f40583de6f00af242a6ffb10e7a81cae3971f4b5ee8efacff764ca5142"
+    },
+    {
+      "path": "frontend/scripts/mako-serverless-replay.mjs",
+      "sha256": "f78b40a9aa53d948f6221999f1fc163fb504834734b26c050920a7d2b457ec06"
+    },
+    {
+      "path": "frontend/scripts/mako-serverless-replication.mjs",
+      "sha256": "9e4859cc4d4db14c50f21ce800d2cac91e5fa974e84a3326b70651ce7175996e"
+    },
+    {
+      "path": "frontend/scripts/mako-serverless-resources.mjs",
+      "sha256": "547dcdfcb07b89c72b176db3b824db786ff796a77105b080cb832104e924b556"
+    },
+    {
+      "path": "frontend/scripts/mako-serverless-upload.mjs",
+      "sha256": "b4f0a45e6160f75f41a3f146afe286a69889fd9027c5c6dd2df3274e751297b9"
+    },
+    {
+      "path": "frontend/scripts/mako-serverless-worker.mjs",
+      "sha256": "dbeaff1fc7b574414806a9b5f4027ac1935309b95a8480a38c6fc73757b4750d"
+    },
+    {
+      "path": "frontend/scripts/mako-smoke-api.mjs",
+      "sha256": "4aed15e14c7c3c17a7e1b17197d4f31ae07cc3de5af29228edd8b54f0f4cbb2e"
+    },
+    {
+      "path": "frontend/scripts/mako-stage-cache.mjs",
+      "sha256": "dc9de860947d90955ca8ca6deac4e2edff058fc7afa7841d9bb69bb08a362e98"
+    },
+    {
+      "path": "frontend/scripts/mako-stage-helpers.mjs",
+      "sha256": "c68f69dafa3db4127e68bc541f798a5cbbbb9f91c2f5556b6d8d90c59c3e4dbf"
+    },
+    {
+      "path": "frontend/scripts/mako-validate-package.mjs",
+      "sha256": "5b1f61fe4a705e2a06c0f73daa11a327c6975ca645f3a75b64e856ddf5d26fbb"
+    },
+    {
+      "path": "frontend/scripts/mako-verify-wasm.mjs",
+      "sha256": "45c9a0d8415ad68da67b72a71c1aba1757f3216cb3a0173f0511c8a1baf191c5"
+    },
+    {
+      "path": "frontend/scripts/mako-worker-login.mjs",
+      "sha256": "b83dc1c20acd8339ef223fea78b7d77b09d93d5a4d16f150f7ccd4b999f012eb"
+    },
+    {
+      "path": "frontend/scripts/update-mako-schemas.mjs",
+      "sha256": "133d06ade730bbe3f196b6da8e7c345d64916dbba0c146c77edffea47b41a6d4"
+    },
+    {
+      "path": "frontend/src/App.tsx",
+      "sha256": "de94e4f25d7cc0af01f085801faa67ff8f3d2d26477247690be5eb5faa8bd284"
+    },
+    {
+      "path": "frontend/src/api/auth.ts",
+      "sha256": "995973e23190be32ae124bca0424f308ca3836eca94cf2e4dc3a31d39eb9d4fe"
+    },
+    {
+      "path": "frontend/src/api/client.ts",
+      "sha256": "7bbe43e8678a71ad8b0bdbd1961c5a529e7810649b770ad8bf0711bfb0b8e944"
+    },
+    {
+      "path": "frontend/src/api/http.ts",
+      "sha256": "6f275612395228d76417ab7ccd474cb91b11e027abe78573dcc2a9ff11ee4d6a"
+    },
+    {
+      "path": "frontend/src/api/jobs.ts",
+      "sha256": "693f8100424b785f25820b5c585c8530a529fa7dddf55817a50fa475d4b37097"
+    },
+    {
+      "path": "frontend/src/api/mako-config.json",
+      "sha256": "192845f964e66d851a6d8b45ad1abc9c6e7abee52795483ec63467f7d3a10119"
+    },
+    {
+      "path": "frontend/src/api/mako-schemas.json",
+      "sha256": "29dacf9c136010f1f09d0f254b2b2fa1200877d81c8cd6d9dd25c9e221862bbc"
+    },
+    {
+      "path": "frontend/src/api/manifest.ts",
+      "sha256": "c1107f8ef129631fd4a7a5176c7682b79a1172ddfcf07509aaeb312ef24ea777"
+    },
+    {
+      "path": "frontend/src/api/runtime.ts",
+      "sha256": "3aaa8463e655d299820a8c6e4af80c4d0bed9cb8e2369623e8d2cabbdfdb5d70"
+    },
+    {
+      "path": "frontend/src/api/rxdb.ts",
+      "sha256": "21c348bfb6e3d802f1bde019477bc1ff5684746c51179670da2efa0124ceb9cf"
+    },
+    {
+      "path": "frontend/src/api/types.ts",
+      "sha256": "ccc185eab5f1901f5c958111e45bb5fba727f6ab204bf8077220611af4d56d90"
+    },
+    {
+      "path": "frontend/src/api/uploads.ts",
+      "sha256": "3beedec9649b637522b2e2e66971b35f44101ab59df7224a23675470174be172"
+    },
+    {
+      "path": "frontend/src/api/wasm.ts",
+      "sha256": "f90ef463c8a37184117ea279b4e791562680d4dee874ba2f34963a23c8f91cc2"
+    },
+    {
+      "path": "frontend/src/assets/react.svg",
+      "sha256": "35ef61ed53b323ae94a16a8ec659b3d0af3880698791133f23b084085ab1c2e5"
+    },
+    {
+      "path": "frontend/src/components/AggregatedPositionTable.tsx",
+      "sha256": "524dcf739ff43239ea1a61b1ea57cb8871a9301b3e5e37ece1d3cb3e9ef3d179"
+    },
+    {
+      "path": "frontend/src/components/AuthBoundary.tsx",
+      "sha256": "8d90cd9090686a45e247c2e03749cb6097698bfdf37349d38d273247b76e921e"
+    },
+    {
+      "path": "frontend/src/components/CloudJobs.tsx",
+      "sha256": "9b8920ff1694216346049883712672167ec75244eb33b98df2051fffab085afe"
+    },
+    {
+      "path": "frontend/src/components/Layout.tsx",
+      "sha256": "a65561f6f6b2a615ab288ff1b51503624a1004d42011af9f66775b2b66ee2872"
+    },
+    {
+      "path": "frontend/src/components/PositionTable.tsx",
+      "sha256": "b94c86949eeed0f2f79b3ce949429e31aa55efbff95e71f9871e05084cc7755b"
+    },
+    {
+      "path": "frontend/src/components/TransactionTable.tsx",
+      "sha256": "61414c76bdbd01372456398c0db1cd0d63066d762e3ffc951600dc70668b28f1"
+    },
+    {
+      "path": "frontend/src/index.css",
+      "sha256": "a7bf3dbeec26448a881866a05ee6a563946232936b3c6105e9969e7f811370f3"
+    },
+    {
+      "path": "frontend/src/main.tsx",
+      "sha256": "7fb5cda4d094ade60df9948f16bf435a9cd744231bc8343c2a8fdf02a71bf28d"
+    },
+    {
+      "path": "frontend/src/muteRxdbNag.ts",
+      "sha256": "3672141b3788de11d30c922e539580120c979ea9e15ed4f5073e9f4f8fb2266f"
+    },
+    {
+      "path": "frontend/src/pages/Admin.tsx",
+      "sha256": "64ed83fe891e332f434841422096b185b0ab2efc717d6aaa046a701d09775d8b"
+    },
+    {
+      "path": "frontend/src/pages/Dashboard.tsx",
+      "sha256": "f9fd5eba2a4435492490388370ad50105820d1a61333fa083fd542de3b7da9a4"
+    },
+    {
+      "path": "frontend/src/pages/Import.tsx",
+      "sha256": "33fbde9fee638fd68b1f1d5dc797224ff5fe6b8a5dcdf1df761f50264da363ee"
+    },
+    {
+      "path": "frontend/src/pages/Performance.tsx",
+      "sha256": "ad06006f55fe40ffd4945ee44e40e618fcba94d747e3a84ed2e997c918896e58"
+    },
+    {
+      "path": "frontend/src/pages/Positions.tsx",
+      "sha256": "87e31fa63ed515f6dfc15d1a01d23aede9625c6a2c02c59ee71790319b4b72a5"
+    },
+    {
+      "path": "frontend/src/pages/SnapTrade.tsx",
+      "sha256": "2f28441218bfb4bd9244f29f3439a59572212bd1d5021c03696ccdd6b2b7014c"
+    },
+    {
+      "path": "frontend/src/pages/Transactions.tsx",
+      "sha256": "5d53199730349cf8a3fd62b6ff518e17d60a40344f9021907bc3864f47087a45"
+    },
+    {
+      "path": "frontend/src/utils/accountCategory.ts",
+      "sha256": "329d265f8c852015ba4adfa7c10163d326e8af58b06854524ab3e7c9505189d1"
+    },
+    {
+      "path": "frontend/src/utils/cashEquivalents.ts",
+      "sha256": "2212f658b6de2c029590afcdf955d34a87e59480b8c9e761a612d648e2b5ded0"
+    },
+    {
+      "path": "frontend/src/utils/date.ts",
+      "sha256": "bb8cbd6c62694c0a60dd76351e2a8ecc98d72b67ef5e8f9cbc6ad0e2f5af6ff0"
+    },
+    {
+      "path": "frontend/src/utils/leverageMap.ts",
+      "sha256": "ab2144c4663ac0a0c1696531597d23c1544d282e6f14d2a558fc483e7ff8326f"
+    },
+    {
+      "path": "frontend/src/utils/positionImplication.ts",
+      "sha256": "15c467d69c5b7c56d5de69b59b3084e217753657f2a7b9d028e705a635fe5c1b"
+    },
+    {
+      "path": "frontend/src/wasm/.gitignore",
+      "sha256": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1"
+    },
+    {
+      "path": "frontend/src/wasm/package.json",
+      "sha256": "bf0e564d99c57e79c49ea939b3d647491b34def94741064b8dab05946181c783"
+    },
+    {
+      "path": "frontend/src/wasm/robinlab_wasm.d.ts",
+      "sha256": "829e1b035d79de18a3dd18ef76fa21ccaebb82363383e8c8175ac3fe51960377"
+    },
+    {
+      "path": "frontend/src/wasm/robinlab_wasm.js",
+      "sha256": "3c996c05902b78efb3e16a98a07ecc585cfd33bcdc029601b0b62790ec391e10"
+    },
+    {
+      "path": "frontend/src/wasm/robinlab_wasm_bg.wasm",
+      "sha256": "0155956ca5724c2f99d1673e400eaddc261023adbfd75c142ea57944aa3ae827"
+    },
+    {
+      "path": "frontend/src/wasm/robinlab_wasm_bg.wasm.d.ts",
+      "sha256": "a0d6cd7425902e0dc5ad9a6692e2b9f165793bc0cd7f688bcae4637cbc35ba1d"
+    },
+    {
+      "path": "frontend/tests/http.test.mjs",
+      "sha256": "d483ed59c815fd1be66d7c923314348181bfb3fb6c82541a50e2af1a74c5d0d3"
+    },
+    {
+      "path": "frontend/tests/jobs.test.mjs",
+      "sha256": "4dba367204a485e34bb124893a90c84179895952643c2d47fdeb79c5f8a0f346"
+    },
+    {
+      "path": "frontend/tests/replication.html",
+      "sha256": "484b2f52787a022c843a4db4e141ddc1ae9570dc465ddc418dfab6df7de1f3be"
+    },
+    {
+      "path": "frontend/tests/replication.mjs",
+      "sha256": "e0aa7222a6d95e499adf94fb63be9d8fb7ffa00aae702aa465ab55c6cad70a0c"
+    },
+    {
+      "path": "frontend/tests/uploads.test.mjs",
+      "sha256": "9353bdf5b27cfa063fb76f6e94d42c07d6e1775405d7d2dd6bc927b356e4b98a"
+    },
+    {
+      "path": "frontend/tsconfig.app.json",
+      "sha256": "922bc5bfb41bdc0768023b2487d54b3ae23c587d999024d4f32cde879ae6f4d8"
+    },
+    {
+      "path": "frontend/tsconfig.json",
+      "sha256": "770b4140bbb581e2dfd9ea9946ffc9c75a1d86ba7d2db5f77c83e37cbdf9d808"
+    },
+    {
+      "path": "frontend/tsconfig.node.json",
+      "sha256": "c3dd0fb522feba3596713f51b95bd53d781d845d24aedbfa2ac093d8b39c5120"
+    },
+    {
+      "path": "frontend/vite.config.ts",
+      "sha256": "7b2f3df3a3c90bec9f60a7eeb43d316fda4646976376bba81a90e9ba340292c0"
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "aa1a719d2f79c68dac680ecb541e157a29c09654902ece987fc3069a26470f8d"
+    },
+    {
+      "path": "Cargo.lock",
+      "sha256": "7bd4d62f0e4727dc662d3cff0544603377dbfd5c250b6adaf20e47162764ca53"
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "934e89db92eeeb4ca3e5dbf03ed3cd26af24f3180f8531395b09d75bfbb62d1c"
+    },
+    {
+      "path": "README.md",
+      "sha256": "d1c592560bf4bb75dd1f855c207b569c3a5bb889045adf29478659abb4041b88"
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "daa9820bc11056b4411884b6a821a2ddcf643e343282099f52de490903f62e82"
+    }
+  ]
+}

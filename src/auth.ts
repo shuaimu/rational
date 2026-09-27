@@ -1,7 +1,7 @@
+import { SharedAuthClient, sessionPersistence } from '../shared/auth.js';
 import {
   type AuthSessionPersistence,
   type AuthUser,
-  BrowserAuthSessionPersistence,
   MakoAuthClient,
   MakoAuthError,
   MakoAuthenticationRequiredError,
@@ -53,15 +53,13 @@ export class MakoRationalAuth implements RationalAuth {
   #refreshInFlight: Promise<AuthUser> | null = null;
 
   constructor(config: NormalizedMakoRxdbClientConfig, options: MakoRationalAuthOptions) {
-    this.#persistence =
-      options.persistence ??
-      new BrowserAuthSessionPersistence(
-        { projectId: config.projectId, environmentId: config.environmentId },
-        { key: `rational.auth.${config.projectId}.${config.environmentId}` },
-      );
-    this.client = new MakoAuthClient(config, {
+    this.#persistence = options.persistence ?? sessionPersistence(config);
+    this.client = new SharedAuthClient(config, {
       persistence: this.#persistence,
       fetch: options.fetch,
+    });
+    this.client.subscribe((event) => {
+      if (event.kind === 'session' || event.kind === 'signed_out') this.#user = event.session?.user ?? null;
     });
   }
 

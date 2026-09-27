@@ -1,0 +1,7 @@
+{
+  "endpoint": "https://cloud-test.makodb.com",
+  "projectId": "prj_43f3756d4588d7412cbe0b633a455695",
+  "environmentId": "env_833a71a6da540180b4e64c05cfb90e6d",
+  "environmentName": "robinlab",
+  "region": "us-east-1-beta"
+}

@@ -5,3 +5,14 @@ web-dist/
 test-results/
 playwright-report/
 *.local
+
+# Protected local integration state
+.local/
+**/*.db
+**/*.db.pre-*
+**/*.log
+**/target/
+**/__pycache__/
+**/*.pyc
+**/.env
+**/.env.*

@@ -1,10 +1,12 @@
 # Rational
 
-A household money manager — shared households, accounts, transactions with
-splits, categories and tags — that has **no backend server of its own**.
+Rational combines household money management with **Rational Investment**, a
+separate portfolio and options tracker linked from the main app. Both use the
+same sign-in and Mako Cloud environment, with separate data and access policies.
+No local backend server is required.
 
-There is no API server in this repository, and nothing to deploy but static
-files. Everything a server would normally do is done by one of two things:
+The browser apps deploy as static files. Hosted API and scheduled functions
+deploy to Mako Cloud. Everything a server would normally do is done by one of two things:
 
 - **[Mako Cloud](https://github.com/makodb) is the database.** The app holds its
   data in [RxDB](https://rxdb.info) in the browser (IndexedDB) and replicates it
@@ -23,9 +25,8 @@ files. Everything a server would normally do is done by one of two things:
   a bank connection, a nightly pass over categorisation rules — belongs in the
   same place.
 
-The point of Rational is that this is enough to build a real product. It is also
-the standing test bed for Mako Cloud: whatever Rational cannot do is a gap in the
-platform, and gets fixed there rather than worked around here.
+Application behavior is maintained in this repository. Platform defects and SDK
+changes are reviewed separately in Mako Cloud repositories.
 
 ## The live site
 
@@ -33,8 +34,8 @@ platform, and gets fixed there rather than worked around here.
 GitHub Pages, and it talks to a real Mako Cloud project — the one
 `rational.config.json` names. Sign up with an email and a password and the data
 is yours: it lives in that project, syncs to every browser you sign in from, and
-survives clearing this one. There is no server between the page and the
-database, and none of the code that runs is ours to operate.
+survives clearing this one. Browser replication talks directly to Mako Cloud;
+application APIs and scheduled jobs run as hosted functions maintained here.
 
 It is a public preview project, so treat it as one: anybody may sign up, and
 nothing there is backed up or promised to outlive the preview. Put real money
@@ -86,21 +87,22 @@ npm run seed          # ~200 demo transactions, as a signed-in user
 ## Building and testing
 
 ```bash
-npm run build         # tsc -b, then vite build into web-dist/
+npm run build         # both entry points into web-dist/
 npm run typecheck
 npm run test:unit     # node --test over the built selectors
 npm run test:browser  # Playwright, against the in-browser fake
 ```
 
-`npm run build` needs no project and no network beyond the install: the demo
-build is the ordinary build.
+`npm run build` needs no network beyond dependency installation. Household demo
+mode remains available; Investment requires an authenticated, provisioned cloud
+environment.
 
 ## Layout
 
 | Path | What it is |
 | --- | --- |
 | `src/` | The app: React, RxDB, and the Mako client. No server code. |
-| `src/kit/` | The Mako design system the screens are built from — tokens with a light and a dark palette, Radix-based components, Recharts charts — copied here from the platform repository so this one needs nothing that is not on npm. |
+| `src/kit/` | The Mako design system the screens are built from — tokens with a light and a dark palette, Radix-based components, Recharts charts — copied here from the platform repository so the application does not require a platform checkout. |
 | `src/testing/` | The in-browser fake of the Mako protocol the demo runs on. |
 | `functions/` | Edge functions, deployed to Mako Cloud's runtime. |
 | `mako/` | Collections, policies, indexes, and buckets, as data. |
@@ -111,17 +113,29 @@ The client, `@mako-cloud/rxdb`, is installed from
 [`makodb/mako-rxdb`](https://github.com/makodb/mako-rxdb) until it is published
 to npm; swapping the specifier for a version range is then a one-line change.
 
-## How this repository is produced
+## Independent application development
 
-This repository is generated. Rational is developed in the Mako Cloud platform
-repository, where its browser suites run against the platform itself, and
-`scripts/export-rational-app.mjs` there copies the sources here and writes the
-two files that differ for a standalone application (`package.json` and
-`vite.config.ts`). Everything outside this README, the licence, the workflow,
-and the configuration example is overwritten on the next export.
+This repository is the source of truth for Rational and **Rational Investment**.
+Send application changes here. Mako Cloud supplies the database, authentication,
+SDKs, and hosted functions; its example/export tooling does not generate this app.
 
-So pull requests belong upstream, not here — an issue on this repository is a
-fine place to start.
+`investment/` contains the investment frontend, Rust/Wasm calculation workspace,
+and Mako functions. The investment homepage builds for
+`/rational/investment/`, with a link from Rational and shared sign-in. Household
+holdings remain separate; investment balances are not automatically counted in
+household net worth.
+
+```bash
+npm ci
+npm ci --prefix investment/frontend
+npm run build                  # both static entry points in web-dist/
+npm run dev                    # household app on 127.0.0.1:5173
+npm run dev:investment         # starts investment assets; visit via 127.0.0.1:5173/investment/
+```
+
+No local backend is required. Credentials, financial exports, and runtime state
+must never be committed. See `openspec/changes/integrate-rational-investment/`
+for the migration design and implementation progress.
 
 ## Licence
 
