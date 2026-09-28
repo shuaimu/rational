@@ -16,9 +16,13 @@ The staged portfolio graph, command history, cache status and saved input record
 have exact logical parity with the protected rehearsal snapshot. Price history is
 only partially imported; the remaining collections and final snapshot still need
 verification. Bulk imports have failed with generic dependency errors after partial
-commits. Mako Cloud PR #4 adds the missing diagnostics; PR #11 fixes export of
-valid large documents. Both still require merge/deployment before the cloud checks
-can be completed. No production Pages publication or environment cutover has occurred.
+commits. Mako Cloud PRs #4 and #11 are now merged/deployed: the large-document
+export succeeds, and failed imports now report `worker_internal_transport`.
+A fresh export verifies all partially imported price rows against the source.
+PR #12 fixes the Caddy allowlist blocking credential inventory. PR #13 gives bulk
+RPCs a separate timeout budget and adds timeout-specific diagnostics; 276 related
+Rust tests and scoped Clippy pass. Both follow-ups require deployment before retry. No production Pages publication or environment
+cutover has occurred.
 
 Public bindings are generated from `rational.config.json` and
 `investment/mako/owner.json`. The configured owner is an existing active Rational

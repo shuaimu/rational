@@ -33,14 +33,20 @@ The screenshots below contain navigation or synthetic data only.
 
 ## Remaining checks
 
-The bulk importer has repeatedly failed after partial commits, without enough
-diagnostic detail to identify the remaining cause. Mako Cloud
-[PR #4](https://github.com/makodb/mako-cloud/pull/4) provides those diagnostics;
-[PR #11](https://github.com/makodb/mako-cloud/pull/11) fixes the reproduced export
-size limit. Both require merge and deployment before retrying the cloud checks.
+Mako Cloud [PR #4](https://github.com/makodb/mako-cloud/pull/4) and
+[PR #11](https://github.com/makodb/mako-cloud/pull/11) are merged and deployed.
+The large-document export now succeeds. The import still fails after partial
+commits, with the new `worker_internal_transport` diagnostic. A fresh destination
+export confirms exact source contents for every imported price record.
+[PR #12](https://github.com/makodb/mako-cloud/pull/12) repairs the Caddy route
+that blocks credential inventory.
+[PR #13](https://github.com/makodb/mako-cloud/pull/13) adds a separate bulk RPC
+timeout budget and timeout-specific diagnostics. Its delayed-response regression
+fails with the old budget and passes with the fix; 276 related Rust tests and
+scoped Clippy pass. Both follow-ups still require deployment.
 
 Full staged data/report parity, live Investment accounts/trades/options, import
 and provider flows, and admin actions remain pending. The latest source service-key
-inventory API also needs deployment. No live source admission fence, final snapshot,
+inventory route also needs the Caddy configuration fix. No live source admission fence, final snapshot,
 destination activation or Pages publication has occurred. Follow
 [the migration runbook](investment-migration.md) before taking those steps.
