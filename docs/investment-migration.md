@@ -7,10 +7,11 @@ point fails before touching files or Git, including when given an explicit remot
 
 ## Current state
 
-The source `robinlab` environment remains authoritative. Destination Investment
-functions are **read-only**, the destination dispatcher is **disabled**, and no
-Investment portfolio head has been published there. Do not enable destination
-writes until the final checks below pass. The household application remains live.
+At the last authenticated inspection on September 28, 2026, the source `robinlab`
+environment remained authoritative. Destination Investment functions were
+**read-only**, its dispatcher was **disabled**, and no Investment portfolio head
+had been published there. Recheck these bindings and live state before proceeding;
+do not enable destination writes until the final checks below pass.
 
 The staged portfolio graph, command history, cache status and saved input records
 have exact logical parity with the protected rehearsal snapshot. Price history is
@@ -21,8 +22,14 @@ export succeeds, and failed imports now report `worker_internal_transport`.
 A fresh export verifies all partially imported price rows against the source.
 PR #12 fixes the Caddy allowlist blocking credential inventory. PR #13 gives bulk
 RPCs a separate timeout budget and adds timeout-specific diagnostics; 276 related
-Rust tests and scoped Clippy pass. Both follow-ups require deployment before retry. No production Pages publication or environment
-cutover has occurred.
+Rust tests and scoped Clippy pass. Both follow-ups merged on October 4. The October
+11 resume check still receives an empty HTTP 404 from the credential inventory
+route, consistent with the Caddy configuration fix remaining undeployed. Its merge
+note explicitly requires configuration regeneration/reload. The bulk timeout fix's
+deployed behavior is still unverified. The saved developer session expired without
+a refresh credential, so authenticated inventory and import checks require private
+CLI sign-in. No migration writes, source fence, or Pages publication were performed
+during that resume check. Do not retry imports until deployment is verified.
 
 Public bindings are generated from `rational.config.json` and
 `investment/mako/owner.json`. The configured owner is an existing active Rational
