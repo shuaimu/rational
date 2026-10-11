@@ -7,7 +7,7 @@ point fails before touching files or Git, including when given an explicit remot
 
 ## Current state
 
-At the last authenticated inspection on September 28, 2026, the source `robinlab`
+At the latest authenticated inspection on October 11, 2026, the source `robinlab`
 environment remained authoritative. Destination Investment functions were
 **read-only**, its dispatcher was **disabled**, and no Investment portfolio head
 had been published there. Recheck these bindings and live state before proceeding;
@@ -26,10 +26,23 @@ Rust tests and scoped Clippy pass. Both follow-ups merged on October 4. The Octo
 11 resume check still receives an empty HTTP 404 from the credential inventory
 route, consistent with the Caddy configuration fix remaining undeployed. Its merge
 note explicitly requires configuration regeneration/reload. The bulk timeout fix's
-deployed behavior is still unverified. The saved developer session expired without
-a refresh credential, so authenticated inventory and import checks require private
-CLI sign-in. No migration writes, source fence, or Pages publication were performed
-during that resume check. Do not retry imports until deployment is verified.
+deployed behavior is still unverified. After private CLI sign-in, authenticated
+credential inventory also returns the empty 404 in both environments. Direct SSH
+to the documented deployment host times out from this machine; a reachable operator
+deployment path is required. No application-data migration writes, source fence,
+or Pages publication were performed during that resume check. Do not retry imports
+until deployment is verified.
+
+The refreshed inventory confirms unchanged source API/jobs versions 6/8 and
+destination versions 2/2, one enabled source Investment dispatcher, a paused
+destination dispatcher, and zero destination portfolio heads. Both household
+schedules remain enabled. All 15 Investment schemas, indexes, and mapped owner
+policies match; all 13 household schemas, policy rules, and indexes are unchanged.
+The household policy response's environment authorization epoch advanced from 118
+to 133, consistent with the 15 additive Investment policy activations; its rules
+did not change. A fresh price export matches all 1,568 previously verified staged
+records exactly. Source job inventory contains 305 queued, two retrying, 411
+completed, and two cancelled jobs; this is a live observation, not a drain receipt.
 
 Public bindings are generated from `rational.config.json` and
 `investment/mako/owner.json`. The configured owner is an existing active Rational

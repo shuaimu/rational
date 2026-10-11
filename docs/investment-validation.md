@@ -2,7 +2,7 @@
 
 The integration branch combines both browser entry points and hosted application
 code in Rational. Production cutover is **not complete**. At the last authenticated
-inspection on September 28, the source remained authoritative; the destination API
+inspection on October 11, the source remained authoritative; the destination API
 was read-only, its dispatcher disabled, and its portfolio head unpublished. These
 live facts require rechecking before cutover.
 
@@ -39,9 +39,22 @@ The screenshots below contain navigation or synthetic data only.
 GitHub access and writes to the Rational checkout work again. Both follow-up PRs
 below merged on October 4, but merge alone does not verify deployment. An
 unauthenticated probe of the credential inventory route still returns HTTP 404
-with an empty body, while `/v1/projects` returns a structured JSON response. The
-saved developer session is expired and non-renewable; authenticated inventory is
-pending private CLI sign-in. No cloud migration mutations were attempted.
+with an empty body, while `/v1/projects` returns a structured JSON response.
+Following renewed private sign-in, authenticated credential inventory returns the
+same 404 in both environments. Direct SSH to the documented platform deployment
+host times out. No application-data migration mutations were attempted.
+
+Authenticated reads confirm unchanged function versions/configurations, an enabled
+source dispatcher, a paused destination dispatcher, no destination portfolio head,
+and enabled household schedules. All 140 other metadata reads succeeded. Household
+schemas/rules/indexes are unchanged; policy envelopes only differ in the environment
+authorization epoch (118 to 133 after additive Investment provisioning). All 15
+Investment schemas, mapped owner policies, and indexes match. Both mapped owner
+identities are active. A fresh destination price export verifies all 1,568 records
+exactly against both the rehearsal source and prior partial baseline. Source jobs
+include 305 queued and two retrying records; cutover still requires reconciliation.
+Protected evidence is under `.local/integration/resume-live/` and
+`.local/integration/resume-price-baseline/`.
 
 Re-ran successfully: both production builds, Rational type checks, Investment
 lint, 224 Rational unit tests, 40 hosted function tests, 12 Investment frontend
