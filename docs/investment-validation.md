@@ -47,10 +47,20 @@ including all 2,017 large saved-input records. A resumable import of the remaini
 36,616 rehearsal price records was admitted using the fresh baseline. Subsequent
 job-status calls and a separate household export were interrupted when Caddy began
 returning empty HTTP 403 responses for both the homepage and management routes.
-This does not establish import failure or success: committed progress is unknown.
-No replacement import was submitted. The source was not fenced and the destination
-was not activated. Await restoration of platform admission, inspect the existing
-job, and re-export to verify its contents before further migration writes.
+Operator investigation then verified the durable job state directly through the
+VM: all 36,616 price records committed with zero failures, and the household export
+succeeded with 15 records. No replacement import was submitted. Content verification
+still requires a fresh export after access returns.
+
+The preview guard closed admission because control-plane audit readiness latched
+false. Storage was healthy with one recorded busy timeout; the exact failing audit
+operation was not logged. Restarting only the control plane restored all four
+private readiness endpoints. Public admission remains restricted because the
+preview approval was invalidated. [Mako Cloud PR #17](https://github.com/makodb/mako-cloud/pull/17)
+adds bounded audit retries and diagnostics; its audit and broader control/storage
+tests pass. Source fencing, destination activation, and
+Pages publication have not occurred. Incident evidence is protected under
+`.local/integration/platform-incident-20261012/`.
 
 Evidence and journals: `.local/integration/deployment-recheck-20261012/`,
 `staging-baseline-20261012/`, `staging-import-20261012/`, and

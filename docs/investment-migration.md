@@ -29,14 +29,22 @@ A new import was admitted for the remaining 36,616 rehearsal price records, usin
 that fresh baseline to skip only verified identical rows. This is staging work;
 final cutover still requires a fresh fenced source snapshot.
 
-After import admission, the public homepage, credential inventory, and job-status
-routes began returning empty Caddy HTTP 403 responses. This is a new platform
-admission restriction, separate from the resolved credential-route 404 and CLI
-refresh issues. The import's current state and committed count are unknown until
-status access returns. Preserve its existing job and journal; do not submit a new
-import. A household-baseline export was also interrupted. The operator has been
-asked to inspect the preview admission guard and resolve its reported cause.
-Protected checkpoint and job IDs are in `.local/integration/current-status.json`.
+After import admission, public routes began returning empty Caddy HTTP 403
+responses. Operator investigation through the cluster gateway found a latched
+control-plane audit readiness failure; the admission guard invalidated its preview
+approval. Storage remained healthy and recorded one SQLite busy timeout. A
+transient lock timeout is the leading trigger, but this release did not log the
+failed audit operation. Restarting only the control plane restored all four private
+readiness checks. [Mako Cloud PR #17](https://github.com/makodb/mako-cloud/pull/17)
+adds bounded audit retries and failure diagnostics, with regression tests. Public
+admission remains restricted pending reviewed recovery and a fresh preview approval.
+
+Read-only inspection of durable control state verified that the existing price
+import succeeded: all 36,616 rows committed, zero failures. The interrupted
+household export also succeeded with 15 rows. No replacement import was submitted.
+Resume the existing journals after admission is restored and re-export destination
+contents before further migration writes. Job IDs and incident evidence are in
+`.local/integration/current-status.json` and `platform-incident-20261012/`.
 
 Public bindings are generated from `rational.config.json` and
 `investment/mako/owner.json`. The configured owner is an existing active Rational
