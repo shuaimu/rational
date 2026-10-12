@@ -7,51 +7,36 @@ point fails before touching files or Git, including when given an explicit remot
 
 ## Current state
 
-October 12 deployment recheck: both credential-list routes now return structured
-401 responses without authentication, replacing the empty proxy 404. Upstream's
-deployment record identifies release `e32a5ca3` from source `7bc9fc0`, which includes
-the bulk timeout fix. Authenticated inventory and import behavior still need live
-verification: the local developer session expired again. The CLI expected the
-wrong refresh-cookie name; Mako Cloud PR #16 corrects it and its auth fixture. The
-local operator CLI has that fix built, and needs one fresh private sign-in to save
-the server's refresh cookie. No migration writes or cutover occurred in this check.
+The October 12 authenticated inventory confirms the source remains authoritative:
+API/jobs versions 6/8 and one active Investment dispatcher. Destination versions
+2/2 remain read-only, its Investment dispatcher is paused, and its full staging
+snapshot contains no portfolio head. Household schedules remain enabled. No source
+fence, destination activation, or combined Pages publication has occurred.
 
-At the latest authenticated inspection on October 11, 2026, the source `robinlab`
-environment remained authoritative. Destination Investment functions were
-**read-only**, its dispatcher was **disabled**, and no Investment portfolio head
-had been published there. Recheck these bindings and live state before proceeding;
-do not enable destination writes until the final checks below pass.
+The installed `mako-cloud` CLI includes the merged PR #16 refresh-cookie fix. A
+fresh login now reports a renewable session. Credential inventory succeeds after
+the platform deployment: 18 source credentials, including 14 active write-capable
+service credentials, and 49 destination credentials were inventoried. All 142
+metadata reads succeeded; schemas, policies, indexes, origins, function bindings,
+and mapped owner identities match the previously verified inventory. Task 4.1 is
+complete. Private credential scopes and writer-fence inputs are preserved locally.
 
-The staged portfolio graph, command history, cache status and saved input records
-have exact logical parity with the protected rehearsal snapshot. Price history is
-only partially imported; the remaining collections and final snapshot still need
-verification. Bulk imports have failed with generic dependency errors after partial
-commits. Mako Cloud PRs #4 and #11 are now merged/deployed: the large-document
-export succeeds, and failed imports now report `worker_internal_transport`.
-A fresh export verifies all partially imported price rows against the source.
-PR #12 fixes the Caddy allowlist blocking credential inventory. PR #13 gives bulk
-RPCs a separate timeout budget and adds timeout-specific diagnostics; 276 related
-Rust tests and scoped Clippy pass. Both follow-ups merged on October 4. The October
-11 resume check still receives an empty HTTP 404 from the credential inventory
-route, consistent with the Caddy configuration fix remaining undeployed. Its merge
-note explicitly requires configuration regeneration/reload. The bulk timeout fix's
-deployed behavior is still unverified. After private CLI sign-in, authenticated
-credential inventory also returns the empty 404 in both environments. Direct SSH
-to the documented deployment host times out from this machine; a reachable operator
-deployment path is required. No application-data migration writes, source fence,
-or Pages publication were performed during that resume check. Do not retry imports
-until deployment is verified.
+A fresh export of all 15 destination Investment collections completed, including
+2,017 saved-input records (207,811,868 bytes) with no failed records. The staged
+portfolio graph, command history, cache status, and saved inputs retain their
+rehearsal contents. The price baseline still contained 1,568 verified records.
+A new import was admitted for the remaining 36,616 rehearsal price records, using
+that fresh baseline to skip only verified identical rows. This is staging work;
+final cutover still requires a fresh fenced source snapshot.
 
-The refreshed inventory confirms unchanged source API/jobs versions 6/8 and
-destination versions 2/2, one enabled source Investment dispatcher, a paused
-destination dispatcher, and zero destination portfolio heads. Both household
-schedules remain enabled. All 15 Investment schemas, indexes, and mapped owner
-policies match; all 13 household schemas, policy rules, and indexes are unchanged.
-The household policy response's environment authorization epoch advanced from 118
-to 133, consistent with the 15 additive Investment policy activations; its rules
-did not change. A fresh price export matches all 1,568 previously verified staged
-records exactly. Source job inventory contains 305 queued, two retrying, 411
-completed, and two cancelled jobs; this is a live observation, not a drain receipt.
+After import admission, the public homepage, credential inventory, and job-status
+routes began returning empty Caddy HTTP 403 responses. This is a new platform
+admission restriction, separate from the resolved credential-route 404 and CLI
+refresh issues. The import's current state and committed count are unknown until
+status access returns. Preserve its existing job and journal; do not submit a new
+import. A household-baseline export was also interrupted. The operator has been
+asked to inspect the preview admission guard and resolve its reported cause.
+Protected checkpoint and job IDs are in `.local/integration/current-status.json`.
 
 Public bindings are generated from `rational.config.json` and
 `investment/mako/owner.json`. The configured owner is an existing active Rational

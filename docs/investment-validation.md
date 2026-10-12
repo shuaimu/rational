@@ -2,7 +2,7 @@
 
 The integration branch combines both browser entry points and hosted application
 code in Rational. Production cutover is **not complete**. At the last authenticated
-inspection on October 11, the source remained authoritative; the destination API
+inspection on October 12, the source remained authoritative; the destination API
 was read-only, its dispatcher disabled, and its portfolio head unpublished. These
 live facts require rechecking before cutover.
 
@@ -33,6 +33,28 @@ The screenshots below contain navigation or synthetic data only.
 ![Real-browser qualification results](images/browser-qualification.png)
 
 ## Remaining checks
+
+### October 12 authenticated resumption
+
+The installed CLI login now retains a refresh cookie (`renewable: true`), and
+credential inventory succeeds in both environments. All 142 metadata reads pass;
+source and destination metadata match the earlier verified inventory. The complete
+source writer inventory identifies 14 active write-capable service credentials.
+OpenSpec task 4.1 is complete; overall progress is 21/31.
+
+A fresh complete destination Investment snapshot passes export integrity checks,
+including all 2,017 large saved-input records. A resumable import of the remaining
+36,616 rehearsal price records was admitted using the fresh baseline. Subsequent
+job-status calls and a separate household export were interrupted when Caddy began
+returning empty HTTP 403 responses for both the homepage and management routes.
+This does not establish import failure or success: committed progress is unknown.
+No replacement import was submitted. The source was not fenced and the destination
+was not activated. Await restoration of platform admission, inspect the existing
+job, and re-export to verify its contents before further migration writes.
+
+Evidence and journals: `.local/integration/deployment-recheck-20261012/`,
+`staging-baseline-20261012/`, `staging-import-20261012/`, and
+`household-before-cutover-20261012/`. The protected checkpoint records exact job IDs.
 
 ### October 12 deployment recheck
 

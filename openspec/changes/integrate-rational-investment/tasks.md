@@ -22,7 +22,7 @@
 
 ## 4. Prepare the shared environment
 
-- [ ] 4.1 Inventory live source and destination collections, schemas, indexes, policies, identities, functions, secrets metadata, schedules, and writer entry points; record Rational household baselines and fail on unexpected collisions.
+- [x] 4.1 Inventory live source and destination collections, schemas, indexes, policies, identities, functions, secrets metadata, schedules, and writer entry points; record Rational household baselines and fail on unexpected collisions.
 - [x] 4.2 Implement additive destination provisioning for all required investment collections and policies while preserving existing Rational resources and allowed origins.
 - [x] 4.3 Provision destination-scoped service credentials and transfer provider secrets privately; deploy investment functions and an inactive dispatcher with target-environment bindings.
 - [ ] 4.4 Implement source mutation/admission fences covering stale clients and retained write gateways; verify existing jobs can drain safely before the final fence.
