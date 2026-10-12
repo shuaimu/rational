@@ -7,6 +7,15 @@ point fails before touching files or Git, including when given an explicit remot
 
 ## Current state
 
+October 12 deployment recheck: both credential-list routes now return structured
+401 responses without authentication, replacing the empty proxy 404. Upstream's
+deployment record identifies release `e32a5ca3` from source `7bc9fc0`, which includes
+the bulk timeout fix. Authenticated inventory and import behavior still need live
+verification: the local developer session expired again. The CLI expected the
+wrong refresh-cookie name; Mako Cloud PR #16 corrects it and its auth fixture. The
+local operator CLI has that fix built, and needs one fresh private sign-in to save
+the server's refresh cookie. No migration writes or cutover occurred in this check.
+
 At the latest authenticated inspection on October 11, 2026, the source `robinlab`
 environment remained authoritative. Destination Investment functions were
 **read-only**, its dispatcher was **disabled**, and no Investment portfolio head

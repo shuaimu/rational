@@ -34,6 +34,24 @@ The screenshots below contain navigation or synthetic data only.
 
 ## Remaining checks
 
+### October 12 deployment recheck
+
+The credential-list routes now reach authentication: unauthenticated probes return
+structured HTTP 401 responses in both environments instead of empty HTTP 404s.
+Upstream records release `e32a5ca3` from `7bc9fc0`; its code includes the 30-second
+bulk RPC budget. Authenticated credential listing and import resumption remain
+unverified because the local developer session expired.
+
+Investigation found the CLI expected `__Host-mako_developer_refresh`, while the
+server sends `__Secure-mako_developer_refresh`. The local CLI is corrected and
+[PR #16](https://github.com/makodb/mako-cloud/pull/16) contains the fix. Matching the
+test fixture to production reproduces two failures before the fix; all 14 auth
+foundation tests pass afterward. The full CLI suite passes 138/140 tests; two
+local-serve tests require Docker or Podman, neither available here. A fresh private
+login is required to capture a refresh cookie. No application-data migration writes
+were attempted. Route evidence is protected under
+`.local/integration/deployment-recheck-20261012/`.
+
 ### October 11 resume verification
 
 GitHub access and writes to the Rational checkout work again. Both follow-up PRs
