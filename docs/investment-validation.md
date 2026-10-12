@@ -49,16 +49,22 @@ job-status calls and a separate household export were interrupted when Caddy beg
 returning empty HTTP 403 responses for both the homepage and management routes.
 Operator investigation then verified the durable job state directly through the
 VM: all 36,616 price records committed with zero failures, and the household export
-succeeded with 15 records. No replacement import was submitted. Content verification
-still requires a fresh export after access returns.
+succeeded with 15 records. No replacement import was submitted. After recovery,
+the original receipt was journaled and a fresh destination export verified exact
+logical parity for all 38,184 rehearsal price records. All 13 household collections
+also exported successfully into the protected baseline.
 
 The preview guard closed admission because control-plane audit readiness latched
 false. Storage was healthy with one recorded busy timeout; the exact failing audit
 operation was not logged. Restarting only the control plane restored all four
-private readiness endpoints. Public admission remains restricted because the
-preview approval was invalidated. [Mako Cloud PR #17](https://github.com/makodb/mako-cloud/pull/17)
-adds bounded audit retries and diagnostics; its audit and broader control/storage
-tests pass. Source fencing, destination activation, and
+private readiness endpoints. [Mako Cloud PR #17](https://github.com/makodb/mako-cloud/pull/17)
+adds bounded audit retries and diagnostics. It passed all eight CI checks, was merged
+and deployed, and public admission was restored with the approved preview renewal.
+The running binaries match release `696d3644`; all four services are ready, with
+configuration and retained backup state unchanged. Authenticated credential
+inventory succeeds in both environments. The installed CLI renewed an expired
+session automatically, without another sign-in. Remaining staging imports resumed.
+Source fencing, destination activation, and
 Pages publication have not occurred. Incident evidence is protected under
 `.local/integration/platform-incident-20261012/`.
 

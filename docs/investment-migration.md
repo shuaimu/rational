@@ -36,14 +36,23 @@ approval. Storage remained healthy and recorded one SQLite busy timeout. A
 transient lock timeout is the leading trigger, but this release did not log the
 failed audit operation. Restarting only the control plane restored all four private
 readiness checks. [Mako Cloud PR #17](https://github.com/makodb/mako-cloud/pull/17)
-adds bounded audit retries and failure diagnostics, with regression tests. Public
-admission remains restricted pending reviewed recovery and a fresh preview approval.
+adds bounded audit retries and failure diagnostics, with regression tests. All eight
+CI checks passed; PR #17 was merged and deployed on October 12 (release
+`696d364433e4025d4c87df046e56f6f858c76dd07a1e16cfb79cfdfbd32628a7`).
+The approved preview renewal restored public access. All four private readiness
+checks passed, running binaries matched the verified release, and configuration
+and retained backup state were unchanged. Authenticated credential inventories
+succeeded for both environments. The installed CLI automatically renewed its
+expired session without another sign-in.
 
 Read-only inspection of durable control state verified that the existing price
 import succeeded: all 36,616 rows committed, zero failures. The interrupted
 household export also succeeded with 15 rows. No replacement import was submitted.
-Resume the existing journals after admission is restored and re-export destination
-contents before further migration writes. Job IDs and incident evidence are in
+The existing price-import journal now records the successful receipt, and the
+household export resumed with its original job ID. A fresh destination price export
+verified all 38,184 rehearsal records exactly. All 13 household collections are
+sealed in the protected baseline. Remaining staging imports have resumed. Job IDs
+and incident evidence are in
 `.local/integration/current-status.json` and `platform-incident-20261012/`.
 
 Public bindings are generated from `rational.config.json` and
