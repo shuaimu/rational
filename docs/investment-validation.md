@@ -171,7 +171,16 @@ only after every failing collection succeeds, including when no head exists or
 the current generation is unchanged. Nine local integration checks and eleven
 real Chrome fixture checks passed, along with frontend lint and production build.
 The live preview correctly displays “Waiting for the cloud portfolio” until final
-head publication. No platform quota or billing settings were changed.
+head publication. That UI fix did not change platform quotas.
+
+Mako Cloud PR #18 removes the 120-per-minute replication request cap from the
+gateway default and generated plan policies. The deployed release was verified
+against the committed source and running binary hashes; all services passed
+readiness, with configuration and existing storage preserved. An authenticated
+read-only probe changed from 120 successful requests plus 40 HTTP 429 responses
+to 160 successful requests in one minute with no throttling. The preview reloaded
+without the rate-limit warning. Daily request allowances and byte-volume limits
+remain; this change does not remove the separate bulk-export artifact limit.
 
 ### October 13 final source fence
 
@@ -198,6 +207,11 @@ unencoded artifacts. Final migration therefore still needs bounded, disjoint
 indexed exports under the verified source write fence, plus disk-backed artifact
 verification; retrying the same whole-collection export cannot resolve this limit.
 A partial immutable provider import reported 2,912 committed records before
-ending with `worker_state` after cancellation was requested. Its destination
-collection must be freshly exported and verified before resuming reconciliation.
+ending with `worker_state` after cancellation was requested. A fresh destination
+export verified 116,068 exact source records, including 2,944 new commits, so
+reconciliation uses the verified destination contents rather than the progress
+counter. The remaining 5,353 records are resuming through the durable CAS journal.
+After the rate-limit deployment, four remaining small source exports completed;
+14 of 15 final collections are now sealed. Only the saved-input collection remains
+unsealed, with its separate size and snapshot-duration limits unresolved.
 No final head, destination writer activation, or combined Pages publication occurred.
