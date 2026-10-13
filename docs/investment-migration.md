@@ -163,8 +163,11 @@ For a staged rehearsal, keep destination admission read-only. After the final
 source fence, `investment-reconcile.mjs` compares the new source snapshot with
 a verified destination staging baseline. It previews changes by default;
 `--apply` uses destination revisions and refuses any unexpected intervening
-write. Re-export and compare non-head collections before separately publishing
-the final head with `--publish-head`.
+write. `--concurrency 4` allows at most four independent document comparisons
+and mutations at once; receipts are saved after each settled batch, including
+when one operation fails. The default remains sequential. Re-export and compare
+non-head collections before separately publishing the final head with
+`--publish-head`.
 
 ## Cutover order
 

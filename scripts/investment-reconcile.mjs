@@ -23,10 +23,13 @@ async function rows(root,name,manifest){
  const rows=bytes.toString().split('\n').filter(x=>x.trim()).map(x=>JSON.parse(x));const map=new Map(rows.map(row=>[row.id,row]));assert.equal(map.size,rows.length);assert.equal(rows.length,manifest.collections[name].count);return map;
 }
 async function main(){
- const [source,baseline,configFile,cliPath,output,collections,...flags]=process.argv.slice(2);assert.ok(collections,'Usage: SOURCE BASELINE CONFIG CLI_ENTRY PRIVATE_JOURNAL COLLECTIONS [--apply] [--publish-head]');
+ const [source,baseline,configFile,cliPath,output,collections,...flags]=process.argv.slice(2);assert.ok(collections,'Usage: SOURCE BASELINE CONFIG CLI_ENTRY PRIVATE_JOURNAL COLLECTIONS [--apply] [--publish-head] [--concurrency 1..4]');
  const config=JSON.parse(await readFile(configFile,'utf8')),a=JSON.parse(await readFile(resolve(source,'manifest.json'),'utf8')),b=JSON.parse(await readFile(resolve(baseline,'manifest.json'),'utf8'));
  assert.equal(a.scope.project,config.projectId);assert.equal(a.scope.endpoint,config.endpoint);assert.notEqual(a.scope.environment,config.environmentId);
  assert.deepEqual(b.scope,{environment:config.environmentId,project:config.projectId,endpoint:config.endpoint});
+ const concurrencyIndex=flags.indexOf('--concurrency');
+ const concurrency=concurrencyIndex<0?1:Number(flags[concurrencyIndex+1]);
+ assert.ok(Number.isInteger(concurrency)&&concurrency>=1&&concurrency<=4,'concurrency must be between 1 and 4');
  const names=collections.split(',');if(names.includes('portfolio_heads'))assert.ok(flags.includes('--publish-head'),'head publication requires explicit final verification');
  const allowed=new Set(['cache_status','historical_prices','latest_prices','portfolio_commands','portfolio_heads','portfolio_private','portfolio_public','provider_requests','robinlab_coordination','robinlab_counters','robinlab_inputs','robinlab_jobs','robinlab_lanes','robinlab_uploads','split_fetch']);assert.ok(names.every(n=>allowed.has(n)));
  const root=resolve(output);await mkdir(root,{recursive:true,mode:0o700});await chmod(root,0o700);const path=resolve(root,'reconcile.json');
@@ -38,10 +41,17 @@ async function main(){
   console.log(name,changes.length,'changes',flags.includes('--apply')?'applying':'planned');
   if(!flags.includes('--apply'))continue;
   const request=auditedDocuments({cliPath,config,root,collection:name});
-  for(const id of changes){
-   const receipt=name+':'+id;if(state.done[receipt])continue;
-   await reconcileExact({request,id,before:old.get(id)??null,after:desired.get(id)??null,schemaVersion:name==='robinlab_uploads'?2:1,mutationId:'migration_'+hash(scope.source+receipt)});
-   state.done[receipt]=true;await save();
+  for(let offset=0;offset<changes.length;offset+=concurrency){
+   const results=await Promise.allSettled(changes.slice(offset,offset+concurrency).map(async id=>{
+    const receipt=name+':'+id;if(state.done[receipt])return;
+    await reconcileExact({request,id,before:old.get(id)??null,after:desired.get(id)??null,schemaVersion:name==='robinlab_uploads'?2:1,mutationId:'migration_'+hash(scope.source+receipt)});
+    state.done[receipt]=true;
+   }));
+   // One journal writer records all settled successes before reporting a failure.
+   // Interrupted, unrecorded successes remain safe through reconcileExact replay.
+   await save();
+   const failure=results.find(result=>result.status==='rejected');if(failure)throw failure.reason;
+   if(offset%100===0)console.log(name,Math.min(offset+concurrency,changes.length),'/',changes.length,'verified');
   }
  }
 }
