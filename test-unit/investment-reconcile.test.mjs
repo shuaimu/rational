@@ -17,7 +17,7 @@ test('a lost reconciliation response resumes without a duplicate mutation',async
 });
 
 test('bounded reconciliation saves settled successes before a failure and resumes them once',async()=>{
- const {mkdtemp,writeFile,readFile,mkdir,rm}=await import('node:fs/promises');
+ const {mkdtemp,writeFile,readFile,mkdir,rm,readdir}=await import('node:fs/promises');
  const {tmpdir}=await import('node:os');const {join,resolve}=await import('node:path');
  const {createHash}=await import('node:crypto');const {execFile}=await import('node:child_process');
  const {promisify}=await import('node:util');const execute=promisify(execFile);
@@ -44,5 +44,6 @@ else{const m=JSON.parse(await readFile(args[args.indexOf('--mutation')+1].slice(
   await rm(join(root,'fail'));await execute(process.execPath,args);
   for(const row of desired){assert.deepEqual(JSON.parse(await readFile(join(root,row.id+'.json'),'utf8')).body,row);assert.equal(await readFile(join(root,row.id+'.writes'),'utf8'),'1');}
   assert.equal(Object.keys(JSON.parse(await readFile(join(root,'journal/reconcile.json'),'utf8')).done).length,6);
+  assert.equal((await readdir(join(root,'journal'))).filter(name=>name.startsWith('migration_')).length,0,'acknowledged payloads do not accumulate on disk');
  }finally{await rm(root,{recursive:true,force:true});}
 });

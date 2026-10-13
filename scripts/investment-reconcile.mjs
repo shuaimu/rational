@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {auditedDocuments} from './investment-explorer.mjs';
-import {snapshotRows} from './investment-snapshot.mjs';
+import {snapshotIndex} from './investment-snapshot.mjs';
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const canonical=value=>JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
 export async function reconcileExact({request,id,before,after,schemaVersion,mutationId}){
@@ -19,7 +19,7 @@ export async function reconcileExact({request,id,before,after,schemaVersion,muta
   assert.equal(result.status,'conflict');
  }throw Error('Concurrent destination mutation; migration stopped');
 }
-const rows=(root,name,manifest)=>snapshotRows(resolve(root,name+'.jsonl'),manifest.collections[name]);
+const rows=(root,name,manifest)=>snapshotIndex(resolve(root,name+'.jsonl'),manifest.collections[name]);
 async function main(){
  const [source,baseline,configFile,cliPath,output,collections,...flags]=process.argv.slice(2);assert.ok(collections,'Usage: SOURCE BASELINE CONFIG CLI_ENTRY PRIVATE_JOURNAL COLLECTIONS [--apply] [--publish-head] [--concurrency 1..4]');
  const config=JSON.parse(await readFile(configFile,'utf8')),a=JSON.parse(await readFile(resolve(source,'manifest.json'),'utf8')),b=JSON.parse(await readFile(resolve(baseline,'manifest.json'),'utf8'));
@@ -35,14 +35,19 @@ async function main(){
  try{state=JSON.parse(await readFile(path,'utf8'));assert.deepEqual(state.scope,scope);}catch(error){if(error.code!=='ENOENT')throw error;state={scope,done:{}};}
  const save=async()=>{await writeFile(path+'.tmp',JSON.stringify(state),{mode:0o600});await rename(path+'.tmp',path);};await save();
  for(const name of names){
-  const desired=await rows(source,name,a),old=await rows(baseline,name,b);const changes=[...new Set([...desired.keys(),...old.keys()])].filter(id=>canonical(desired.get(id)??null)!==canonical(old.get(id)??null));
+  const desired=await rows(source,name,a);let old;
+  try{
+  old=await rows(baseline,name,b);const changes=[];
+  for(const id of new Set([...desired.keys(),...old.keys()])){
+   if(canonical(await desired.get(id)??null)!==canonical(await old.get(id)??null))changes.push(id);
+  }
   console.log(name,changes.length,'changes',flags.includes('--apply')?'applying':'planned');
   if(!flags.includes('--apply'))continue;
   const request=auditedDocuments({cliPath,config,root,collection:name});
   for(let offset=0;offset<changes.length;offset+=concurrency){
    const results=await Promise.allSettled(changes.slice(offset,offset+concurrency).map(async id=>{
     const receipt=name+':'+id;if(state.done[receipt])return;
-    await reconcileExact({request,id,before:old.get(id)??null,after:desired.get(id)??null,schemaVersion:name==='robinlab_uploads'?2:1,mutationId:'migration_'+hash(scope.source+receipt)});
+    await reconcileExact({request,id,before:await old.get(id)??null,after:await desired.get(id)??null,schemaVersion:name==='robinlab_uploads'?2:1,mutationId:'migration_'+hash(scope.source+receipt)});
     state.done[receipt]=true;
    }));
    // One journal writer records all settled successes before reporting a failure.
@@ -51,6 +56,7 @@ async function main(){
    const failure=results.find(result=>result.status==='rejected');if(failure)throw failure.reason;
    if(offset%100===0)console.log(name,Math.min(offset+concurrency,changes.length),'/',changes.length,'verified');
   }
+  }finally{await desired.close();await old?.close();}
  }
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)await main();
