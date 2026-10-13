@@ -30,7 +30,7 @@ const registryKey = 'robinlab.mako.databases.v1';
 function descriptors(): Descriptor[] { try { return JSON.parse(localStorage.getItem(registryKey) ?? '[]'); } catch { throw new Error('Local database registry is unavailable.'); } }
 function register(descriptor: Descriptor) { const all = descriptors().filter((d) => d.transport !== descriptor.transport); all.push(descriptor); localStorage.setItem(registryKey, JSON.stringify(all)); }
 interface PriceView { generation?: number; latest: LatestPrice[]; historical: HistoricalPrice[] }
-interface Runtime { prices: PriceView | null; priceReady: Set<string>; priceTimer?: ReturnType<typeof setTimeout>; pricing: boolean; priceAgain: boolean; scope: string; descriptor: Descriptor; meta: LocalModels; db: Transport; durable: DexieReplicationStateStore; replicas: RxReplicationState<unknown, MakoCheckpoint>[]; live: MakoLiveStreamGroup | null; active: LocalGeneration | null; stopped: boolean; stopping: Promise<void> | null; building: boolean; again: boolean; closeSubscriptions: (() => void)[]; recovery: Promise<void> | null }
+interface Runtime { transientErrors: Set<string>; prices: PriceView | null; priceReady: Set<string>; priceTimer?: ReturnType<typeof setTimeout>; pricing: boolean; priceAgain: boolean; scope: string; descriptor: Descriptor; meta: LocalModels; db: Transport; durable: DexieReplicationStateStore; replicas: RxReplicationState<unknown, MakoCheckpoint>[]; live: MakoLiveStreamGroup | null; active: LocalGeneration | null; stopped: boolean; stopping: Promise<void> | null; building: boolean; again: boolean; closeSubscriptions: (() => void)[]; recovery: Promise<void> | null }
 let runtime: Runtime | undefined;
 let opening: Promise<Runtime> | undefined;
 const storage = getRxStorageDexie();
@@ -116,7 +116,7 @@ async function recover(current: Runtime, reason: string, security = false): Prom
   })().catch(() => { update({ phase: 'error', message: 'Cache recovery failed. Close other RobinLab tabs and reload.' }); });
   return current.recovery;
 }
-function replicationError(current: Runtime, raw: unknown) {
+function replicationError(current: Runtime, raw: unknown, collectionId: string) {
   if (!currentScope(current)) return;
   const error = makoReplicationErrorFrom(raw);
   if (!error) { update({ phase: 'error', message: 'Local replication failed. Reload local data to retry.' }); void Promise.all(current.replicas.map((r) => r.cancel())); current.live?.close(); return; }
@@ -124,6 +124,7 @@ function replicationError(current: Runtime, raw: unknown) {
   if (['checkpoint_expired', 'full_resync_required'].includes(error.code)) { void recover(current, error.code); return; }
   if (error.code.includes('authorization')) { void recover(current, error.code, true); return; }
   if (error.code.includes('schema') || !error.retryable) { update({ phase: 'error', message: 'The cloud schema or access policy changed. Update the app before retrying.' }); current.live?.close(); void Promise.all(current.replicas.map((r) => r.cancel())); return; }
+  current.transientErrors.add(collectionId);
   update({ phase: error.status === 429 ? 'syncing' : 'offline', message: error.status === 429 ? 'Cloud rate limit reached; synchronization will retry.' : 'Offline — showing the last complete portfolio.' });
 }
 
@@ -145,7 +146,7 @@ async function openRuntime(): Promise<Runtime> {
   if (active) { try { validateTables(active.tables); if (!Number.isSafeInteger(active.version) || active.version < 1) throw new Error(); } catch { active = undefined; await meta.state.delete('active'); } }
   const savedPrices = (await meta.state.get('prices'))?.value as PriceView | undefined;
   const prices = savedPrices && Array.isArray(savedPrices.latest) && Array.isArray(savedPrices.historical) ? savedPrices : null;
-  const current: Runtime = { prices, priceReady: new Set(), pricing: false, priceAgain: false, scope, descriptor, meta, db, durable, active: active ?? null, replicas: [], live: null, stopped: false, stopping: null, building: false, again: false, closeSubscriptions: [], recovery: null };
+  const current: Runtime = { transientErrors: new Set(), prices, priceReady: new Set(), pricing: false, priceAgain: false, scope, descriptor, meta, db, durable, active: active ?? null, replicas: [], live: null, stopped: false, stopping: null, building: false, again: false, closeSubscriptions: [], recovery: null };
   if (getAuthState().scope !== scope || getAuthState().status !== 'ready') { await stop(current); throw new Error('Application session changed.'); }
   runtime = current;
   const configs = (Object.keys(schemas) as (keyof Collections)[]).map((name) => ({ ...collectionConfig(name), pullBatchSize: name === 'portfolio_public' ? 20 : name === 'historical_prices' ? 500 : 100 }));
@@ -160,13 +161,23 @@ async function openRuntime(): Promise<Runtime> {
     const pull = createMakoPullOptions<unknown>(config, auth, { stream$: live.stream$(config.collectionId), checkpoints: persistence.checkpoint });
     const original = pull.handler;
     pull.handler = async (...args) => {
-      try { return await original(...args); }
+      try {
+        const result = await original(...args);
+        // Successful empty pulls do not emit collection changes. Clear a stale
+        // transport warning even when the head has not changed (or is absent).
+        if (currentScope(current) && current.transientErrors.delete(config.collectionId)
+          && current.transientErrors.size === 0 && ['syncing', 'offline'].includes(status.phase)) {
+          update({ phase: status.readable ? 'ready' : 'syncing', message: null });
+          void buildGeneration(current);
+        }
+        return result;
+      }
       catch (raw) { const error = makoReplicationErrorFrom(raw); if (error?.retryAfterMilliseconds) await new Promise((resolve) => setTimeout(resolve, Math.min(error.retryAfterMilliseconds!, 60_000))); throw raw; }
     };
     const replica = replicateRxCollection<unknown, MakoCheckpoint>({ collection, replicationIdentifier: `${descriptor.transport}-${config.collectionId}`, pull, live: true, retryTime: 2000, waitForLeadership: true });
     current.replicas.push(replica);
-    if (config.collectionId.endsWith('_prices') || config.collectionId === 'cache_status') void replica.awaitInitialReplication().then(() => { current.priceReady.add(config.collectionId); void buildPrices(current); }).catch((error) => replicationError(current,error));
-    const errors = replica.error$.subscribe((error) => replicationError(current, error));
+    if (config.collectionId.endsWith('_prices') || config.collectionId === 'cache_status') void replica.awaitInitialReplication().then(() => { current.priceReady.add(config.collectionId); void buildPrices(current); }).catch((error) => replicationError(current,error,config.collectionId));
+    const errors = replica.error$.subscribe((error) => replicationError(current, error, config.collectionId));
     const changes = collection.$.subscribe(() => { if (config.collectionId.startsWith('portfolio_')) void buildGeneration(current); else { clearTimeout(current.priceTimer); current.priceTimer = setTimeout(() => void buildPrices(current), 750); } });
     current.closeSubscriptions.push(() => errors.unsubscribe(), () => changes.unsubscribe());
   }

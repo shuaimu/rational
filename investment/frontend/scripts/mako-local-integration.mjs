@@ -16,7 +16,8 @@ Object.defineProperty(globalThis,'document',{value:{visibilityState:'visible',ad
 Object.defineProperty(globalThis,'navigator',{value:{onLine:true},configurable:true});
 const root=resolve(import.meta.dirname,'..');
 const config=JSON.parse(await readFile(resolve(root,'src/api/mako-config.json'),'utf8'));
-let offline=false,revoked=false,epoch=1,rotation=0,missing=false;
+let offline=false,revoked=false,epoch=1,rotation=0,missing=false,headAbsent=false;
+const throttled=new Set();
 const user={id:config.ownerId,email:'owner@fixture.invalid',status:'active',authorizationEpoch:1};
 const token=()=>`fixture.${Buffer.from(JSON.stringify({sub:user.id,project_id:config.projectId,environment_id:config.environmentId,environment_authorization_epoch:epoch,user_authorization_epoch:1,nonce:++rotation})).toString('base64url')}.signature`;
 const wire=()=>({accessToken:token(),refreshToken:`refresh_${rotation}`,expiresIn:3600,user});
@@ -39,8 +40,9 @@ globalThis.fetch=async(url,init={})=>{
  if(path.endsWith('/replication/pull')) {
    if(revoked)return json({error:{code:'unauthenticated',message:'fixture revoked',requestId:'req_fixture',retry:{kind:'never'}}},401);
    const collection=path.split('/').at(-3),body=JSON.parse(init.body);
-   const checkpoint=`fixture_${epoch}_${version}_${missing}_${collection}`;
-   const rows=collection==='portfolio_heads'?[head()]:collection==='portfolio_public'?[manifest,...missing?[]:[part],empty]:collection==='cache_status'?[{id:'cache',generation:1,state:'ready',jobId:null,latest:[],historicalDigest:createHash('sha256').update('[]').digest('hex'),historicalCount:0,updatedAt:0}]:[];
+   if(throttled.has(collection))return json({error:{code:'rate_limited',message:'replication request is throttled',requestId:'req_fixture',retry:{kind:'after_delay',afterMs:25}}},429);
+   const checkpoint=`fixture_${epoch}_${version}_${missing}_${headAbsent}_${collection}`;
+   const rows=collection==='portfolio_heads'?(headAbsent?[]:[head()]):collection==='portfolio_public'?[manifest,...missing?[]:[part],empty]:collection==='cache_status'?[{id:'cache',generation:1,state:'ready',jobId:null,latest:[],historicalDigest:createHash('sha256').update('[]').digest('hex'),historicalCount:0,updatedAt:0}]:[];
    return json({documents:body.checkpoint===checkpoint?[]:rows.map(r=>({...r,_deleted:false})),checkpoint});
  }
  throw new Error('Unexpected fixture route: '+path);
@@ -53,9 +55,21 @@ async function until(predicate,label){for(let i=0;i<200;i++){if(predicate())retu
 try {
  await app.initializeAuth();assert.equal(app.getAuthState().status,'signed-out');
  await app.signIn('owner@fixture.invalid','fixture-password');
- missing=true;await app.startReplication();await new Promise(r=>setTimeout(r,200));assert.equal(app.getSyncStatus().readable,false);
+ headAbsent=true;throttled.add('portfolio_heads');await app.startReplication();
+ await until(()=>app.getSyncStatus().message?.includes('rate limit'),'throttle is visible before a head exists');
+ throttled.clear();await app.resync();
+ await until(()=>app.getSyncStatus().message==='Waiting for the cloud portfolio.','empty successful pull clears throttle');
+ assert.equal(app.getSyncStatus().readable,false);
+ console.log('Passed local integration: recovered throttle clears while waiting for cloud head');
+ headAbsent=false;missing=true;await app.resetLocalData();await new Promise(r=>setTimeout(r,200));assert.equal(app.getSyncStatus().readable,false);
  missing=false;await app.resync();await until(()=>app.getSyncStatus().readable,'first complete generation');assert.equal((await app.readGeneration()).tables.accounts.length,1);
  console.log('Passed local integration: incomplete head waits for all parts');
+ throttled.add('portfolio_heads');throttled.add('portfolio_public');await app.resync();
+ await until(()=>app.getSyncStatus().message?.includes('rate limit'),'throttle on unchanged generation');
+ throttled.delete('portfolio_heads');await app.resync();await new Promise(r=>setTimeout(r,2300));
+ assert.ok(app.getSyncStatus().message?.includes('rate limit'),'one recovered collection must not hide another failure');
+ throttled.clear();await app.resync();await until(()=>app.getSyncStatus().phase==='ready'&&app.getSyncStatus().message===null,'unchanged successful pulls clear throttle');
+ console.log('Passed local integration: all failing collections must recover before clearing warning');
  const refreshes=requests.filter(p=>p.endsWith('/auth/token')).length;
  await Promise.all(Array.from({length:8},()=>app.auth.refreshSession()));
  assert.equal(requests.filter(p=>p.endsWith('/auth/token')).length-refreshes,1);
