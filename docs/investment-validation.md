@@ -34,6 +34,26 @@ The screenshots below contain navigation or synthetic data only.
 
 ## Remaining checks
 
+### October 13 cutover preparation
+
+All 15 destination staging collections exported successfully. All 14 non-head
+collections match the rehearsal source exactly; the destination head remains
+absent. A local verification-only composite of staged records and the rehearsal
+head passed graph/history/artifact validation and all nine native/Wasm financial
+report comparisons. This composite is never a cloud import source.
+
+Twenty-one focused admission, draining, replay, and migration tests passed, and
+both production builds passed. Source API/jobs versions 7/9 enforce draining;
+owner-authenticated status reads return 200 and a new-command probe returns 503.
+All four retained legacy functions return 503 with no attached secrets, and the
+old native worker identity is disabled. Checkpoint drain is in progress, so the
+final source snapshot and destination activation remain pending.
+
+The local combined build's live Google sign-in succeeded. Following Investment
+opened its separate page with the same signed-in owner and a Back to Rational
+link. Portfolio rendering awaits publication of the verified final head.
+
+
 ### October 12 authenticated resumption
 
 The installed CLI login now retains a refresh cookie (`renewable: true`), and
@@ -139,3 +159,28 @@ and provider flows, and admin actions remain pending. The latest source service-
 inventory route also needs the Caddy configuration fix. No live source admission fence, final snapshot,
 destination activation or Pages publication has occurred. Follow
 [the migration runbook](investment-migration.md) before taking those steps.
+
+### October 13 synchronization warning
+
+Cloud telemetry confirmed that the initial preview synchronization reached the
+platform replication throttle (120 requests/minute), with five retryable failures
+in the 05:07 UTC minute. Requests recovered in the following minute; subsequent
+usage settled at 10 requests/minute. The warning persisted because successful
+empty pulls did not update the application status. Recovery now clears the warning
+only after every failing collection succeeds, including when no head exists or
+the current generation is unchanged. Nine local integration checks and eleven
+real Chrome fixture checks passed, along with frontend lint and production build.
+The live preview correctly displays “Waiting for the cloud portfolio” until final
+head publication. No platform quota or billing settings were changed.
+
+### October 13 final source fence
+
+All active jobs completed, leaving 335 accepted queued jobs, 447 completed jobs,
+and two cancelled jobs. Bounded source cleanup finished its source-bound cursor.
+The dispatcher is paused; source API/jobs versions 8/10 and four retained writer
+functions now have no attached credentials or allowed outbound hosts. All six
+closed-handler probes returned 503. Fourteen source write-capable service keys
+were retired, while destination credentials were untouched. After a full claim
+lease, another complete job inventory verified no active checkpoint, running
+worker, uncertain job, or cleanup cursor. Final snapshot verification now also
+rejects terminal cleanup cursors and needs-attention jobs explicitly.

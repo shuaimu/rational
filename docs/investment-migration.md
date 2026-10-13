@@ -7,11 +7,25 @@ point fails before touching files or Git, including when given an explicit remot
 
 ## Current state
 
-The October 12 authenticated inventory confirms the source remains authoritative:
-API/jobs versions 6/8 and one active Investment dispatcher. Destination versions
-2/2 remain read-only, its Investment dispatcher is paused, and its full staging
-snapshot contains no portfolio head. Household schedules remain enabled. No source
-fence, destination activation, or combined Pages publication has occurred.
+On October 13, all 14 staged non-head collections passed exact logical comparison
+with the rehearsal source. The staged graph, 48 accepted commands, 60 retained
+historical roots, and 850 saved artifacts also passed verification; all nine
+financial reports matched between native and Wasm calculations. This remains a
+rehearsal baseline, not the final cutover snapshot.
+
+Source admission was fenced in draining mode with the source owner binding. All
+active checkpoints and the terminal cleanup cursor finished; 335 accepted queued
+jobs remain preserved for transfer. The source dispatcher is paused. Source API
+and jobs versions 8/10 and all four retained writer/qualification functions now use
+credential-free closed handlers; every probe returned 503. The retained native
+worker identity is disabled, and all 14 source write-capable service credentials
+are retired. After waiting a full claim lease, quiescence was verified again.
+The final protected source snapshot is now being exported.
+
+Destination API/jobs versions 2/2 remain read-only, its Investment dispatcher is
+paused, and no portfolio head has been published. Household schedules remain
+independent. The source remains authoritative. Final snapshot/reconciliation,
+destination activation, and combined Pages publication have not occurred.
 
 The installed `mako-cloud` CLI includes the merged PR #16 refresh-cookie fix. A
 fresh login now reports a renewable session. Credential inventory succeeds after

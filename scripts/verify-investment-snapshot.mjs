@@ -23,6 +23,8 @@ for(const [name,entry] of Object.entries(manifest.collections)){
  assert.equal(rows.length,map.size,name+' unique IDs');assert.equal(rows.length,entry.count,name+' count');collections.set(name,map);
 }
 if(quiescent)for(const {body} of collections.get('robinlab_jobs').values()){
+ assert.ok(!body.checkpoint?.cleanupCursor,'finish source-bound cleanup cursors before migration');
+ assert.notEqual(body.state,'needs-attention','reconcile uncertain source jobs before migration');
  if(!['completed','failed','cancelled','needs-attention'].includes(body.state)){assert.equal(body.checkpoint,null,'finish source revision-dependent checkpoints before migration');assert.ok(body.state!=='committing'&&body.leaseUntil<=Date.now(),'source worker must be quiescent');}
 }
 const documents=name=>({get:async id=>collections.get(name)?.get(id)??null});
