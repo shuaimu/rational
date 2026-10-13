@@ -149,12 +149,17 @@ directory. This uses short-lived audited explorer grants, verifies exact
 immutable collisions, and resumes with the same mutation IDs. Never pass
 credentials in arguments themselves.
 
-For collections larger than the platform's 512 MiB bulk-artifact limit, use
-`--paged-explorer-collections robinlab_inputs`. This writes bounded pages directly
-to NDJSON, requires one unchanged snapshot handle and strictly increasing IDs,
-and seals only an exhausted snapshot. An expired cursor stops the export; rerun
-only while the source remains frozen. Verification and reconciliation stream
-NDJSON instead of constructing a single JavaScript string for the collection.
+Large collection exports require Mako Cloud PR #19 (resumable multipart exports)
+and the updated installed `mako-cloud` CLI. The cloud saves bounded parts from one
+snapshot, and `data export --job JOB_ID --output SAME_PATH` resumes a verified
+partial download. Keep its `.part` file and matching `.mako-export.json` sidecar.
+The transfer tool retains the job ID after timeout; rerun with the same journal.
+A terminal failed job requires an explicitly new export job.
+
+Do not use the five-minute explorer snapshot fallback for a multi-gigabyte
+collection. Snapshot sealing indexes byte ranges on disk, and the verifier reads
+private captures through an index, keeping complete collection payloads out of
+memory. Verification still checks every capture and the complete file digest.
 
 Bulk export of captures larger than 192 KiB requires Mako Cloud PR #11. The
 rehearsal used audited explorer browsing with a 2 MiB page budget and a single

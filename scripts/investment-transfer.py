@@ -29,6 +29,30 @@ def logical_digest(rows):
  for chunk in json.JSONEncoder(sort_keys=True,separators=(',',':'),ensure_ascii=False).iterencode(rows):h.update(chunk.encode())
  return h.hexdigest()
 
+def snapshot_summary(path):
+ # Index byte ranges rather than retaining capture payloads. The canonical
+ # digest remains identical to logical_digest(documents(path)), including for
+ # files whose document IDs are not already sorted.
+ ranges={};digest=hashlib.sha256();offset=0
+ with path.open('rb') as content:
+  for line in content:
+   digest.update(line)
+   if line.strip():
+    row=json.loads(line);key=row['id']
+    if not isinstance(key,str):raise ValueError('Invalid document id in '+path.name)
+    if key in ranges:raise ValueError('Duplicate document id in '+path.name)
+    ranges[key]=(offset,len(line))
+   offset+=len(line)
+  logical=hashlib.sha256();logical.update(b'{')
+  for index,key in enumerate(sorted(ranges)):
+   start,length=ranges[key];content.seek(start);row=json.loads(content.read(length))
+   if row['id']!=key:raise ValueError('Snapshot changed while reading '+path.name)
+   if index:logical.update(b',')
+   logical.update(json.dumps(key,ensure_ascii=False).encode());logical.update(b':')
+   for chunk in json.JSONEncoder(sort_keys=True,separators=(',',':'),ensure_ascii=False).iterencode(row):logical.update(chunk.encode())
+  logical.update(b'}')
+ return {'sha256':digest.hexdigest(),'logicalDigest':logical.hexdigest(),'count':len(ranges),'bytes':offset}
+
 def import_parts(rows):
  # The deployed importer groups up to 32 records per RPC. Small rows may share
  # an artifact; larger rows are isolated so their combined batch stays bounded.
@@ -119,10 +143,11 @@ class Transfer:
      if response['digest']!='sha256:'+sha(path):raise ValueError('Export verification failed: '+name)
     receipt={**self.state.get(key,{}),'sha256':sha(path)}
     self.state[key]=receipt;atomic(self.state_path,self.state)
-   rows=documents(path)
-   manifest['collections'][name]={'sha256':sha(path),'logicalDigest':logical_digest(rows),'count':len(rows),'bytes':path.stat().st_size}
+   entry=snapshot_summary(path)
+   if entry['sha256']!=receipt['sha256']:raise ValueError('Sealed snapshot changed: '+name)
+   manifest['collections'][name]=entry
    atomic(self.root/'manifest.json',manifest)
-   print('Verified snapshot',name,len(rows),'documents',flush=True)
+   print('Verified snapshot',name,entry['count'],'documents',flush=True)
  def import_snapshot(self,snapshot,names):
   root=Path(snapshot).resolve();manifest=json.loads((root/'manifest.json').read_text())
   scope=manifest['scope']

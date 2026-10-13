@@ -109,4 +109,12 @@ class TransferTests(unittest.TestCase):
   rows={'z':{'name':'é','value':[1,None]},'a':{'id':'a','nested':{'z':2,'a':1}}}
   self.assertEqual(m.logical_digest(rows),hashlib.sha256(json.dumps(rows,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest())
 
+ def test_disk_index_summary_preserves_canonical_digest_and_rejects_duplicates(self):
+  rows={'z':{'id':'z','payload':'é'*100000},'a':{'id':'a','nested':{'z':2,'a':1}}}
+  path=self.root/'indexed.jsonl';path.write_text('\n'.join(json.dumps(row,ensure_ascii=False) for row in rows.values()))
+  summary=m.snapshot_summary(path)
+  self.assertEqual(summary,{'sha256':m.sha(path),'logicalDigest':m.logical_digest(rows),'count':2,'bytes':path.stat().st_size})
+  path.write_text('{"id":"a"}\n{"id":"a"}\n')
+  with self.assertRaisesRegex(ValueError,'Duplicate'):m.snapshot_summary(path)
+
 if __name__=='__main__':unittest.main()

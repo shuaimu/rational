@@ -4,7 +4,7 @@ import {readFile,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {snapshotRows} from './investment-snapshot.mjs';
+import {snapshotRows,snapshotIndex} from './investment-snapshot.mjs';
 import {PortfolioRepository} from '../investment/mako/serverless/shared/repository.js';
 import {Artifacts} from '../investment/mako/serverless/shared/artifacts.js';
 import {domainCall} from '../investment/mako/serverless/shared/errors.js';
@@ -18,9 +18,15 @@ for(const name of ['cache_status','historical_prices','latest_prices','portfolio
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 const collections=new Map();
 for(const [name,entry] of Object.entries(manifest.collections)){
- const rows=await snapshotRows(resolve(root,name+'.jsonl'),entry);
- const map=new Map([...rows].map(([id,body])=>[id,{body,revision:'snapshot',schemaVersion:name==='robinlab_uploads'?2:1}]));
- collections.set(name,map);
+ if(name==='robinlab_inputs'){
+  const index=await snapshotIndex(resolve(root,name+'.jsonl'),entry);
+  collections.set(name,{size:index.size,close:index.close,
+   get:async id=>{const body=await index.get(id);return body?{body,revision:'snapshot',schemaVersion:1}:undefined;},
+   async *values(){for await(const body of index.values())yield {body,revision:'snapshot',schemaVersion:1};}});
+ }else{
+  const rows=await snapshotRows(resolve(root,name+'.jsonl'),entry);
+  collections.set(name,new Map([...rows].map(([id,body])=>[id,{body,revision:'snapshot',schemaVersion:name==='robinlab_uploads'?2:1}])));
+ }
 }
 if(quiescent)for(const {body} of collections.get('robinlab_jobs').values()){
  assert.ok(!body.checkpoint?.cleanupCursor,'finish source-bound cleanup cursors before migration');
@@ -49,7 +55,7 @@ for(const name of ['portfolio_public','portfolio_private','portfolio_commands'])
 const encoded=domain({action:'encode',dataset});
 assert.deepEqual(encoded.public.root,head.body.public_root);assert.deepEqual(encoded.private.root,head.body.private_root);
 const artifactStore=new Artifacts(()=>documents('robinlab_inputs'));let artifacts=0;
-for(const {body} of collections.get('robinlab_inputs')?.values()??[]){
+for await(const {body} of collections.get('robinlab_inputs')?.values()??[]){
  if(body.kind==='manifest'){await artifactStore.load(body.jobId,{id:body.id,digest:body.digest,bytes:body.bytes});artifacts++;}
  else if(body.kind==='chunk')assert.equal(digest(Buffer.from(body.payload,'base64')),body.digest,'private capture digest');
 }
@@ -75,3 +81,5 @@ for(const operation of ['accounts','tickers','transactions','summary','performan
 const report={version:head.body.sequence,commands:commands.size,verifiedHistoricalRoots:checkedRoots.size,artifacts,collections:Object.fromEntries([...collections].map(([name,rows])=>[name,rows.size])),reports:checks,nativeParity:Boolean(native),quiescent,cacheReady,historicalDigest:cacheDigest,complete:true};
 await writeFile(resolve(root,'verification.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});
 console.log(JSON.stringify({version:report.version,commands:report.commands,verifiedHistoricalRoots:report.verifiedHistoricalRoots,artifacts,financialReports:checks.length,nativeParity:report.nativeParity,cacheReady,complete:true}));
+
+await collections.get('robinlab_inputs')?.close?.();
