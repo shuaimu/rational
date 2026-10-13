@@ -191,3 +191,13 @@ cover changed snapshots, completed pagination, and canonical digest compatibilit
 Sixteen Python migration tests and five Node snapshot/reconciliation tests pass,
 including recording concurrent successes before a failed operation and resuming
 without a repeated write. Full snapshot parity remains required before publication.
+
+The live paged attempt stopped without sealing when its five-minute snapshot
+cursor expired. The first 22,400 manifests alone reference more than 3.1 GB of
+unencoded artifacts. Final migration therefore still needs bounded, disjoint
+indexed exports under the verified source write fence, plus disk-backed artifact
+verification; retrying the same whole-collection export cannot resolve this limit.
+A partial immutable provider import reported 2,912 committed records before
+ending with `worker_state` after cancellation was requested. Its destination
+collection must be freshly exported and verified before resuming reconciliation.
+No final head, destination writer activation, or combined Pages publication occurred.
