@@ -4,6 +4,7 @@ import {readFile,writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
+import {snapshotRows} from './investment-snapshot.mjs';
 import {PortfolioRepository} from '../investment/mako/serverless/shared/repository.js';
 import {Artifacts} from '../investment/mako/serverless/shared/artifacts.js';
 import {domainCall} from '../investment/mako/serverless/shared/errors.js';
@@ -17,10 +18,9 @@ for(const name of ['cache_status','historical_prices','latest_prices','portfolio
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
 const collections=new Map();
 for(const [name,entry] of Object.entries(manifest.collections)){
- const bytes=await readFile(resolve(root,name+'.jsonl'));assert.equal(digest(bytes),entry.sha256,name+' file digest');
- const rows=bytes.toString().split('\n').filter(line=>line.trim()).map(line=>JSON.parse(line));
- const map=new Map(rows.map(body=>[body.id,{body,revision:'snapshot',schemaVersion:name==='robinlab_uploads'?2:1}]));
- assert.equal(rows.length,map.size,name+' unique IDs');assert.equal(rows.length,entry.count,name+' count');collections.set(name,map);
+ const rows=await snapshotRows(resolve(root,name+'.jsonl'),entry);
+ const map=new Map([...rows].map(([id,body])=>[id,{body,revision:'snapshot',schemaVersion:name==='robinlab_uploads'?2:1}]));
+ collections.set(name,map);
 }
 if(quiescent)for(const {body} of collections.get('robinlab_jobs').values()){
  assert.ok(!body.checkpoint?.cleanupCursor,'finish source-bound cleanup cursors before migration');

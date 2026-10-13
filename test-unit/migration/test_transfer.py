@@ -91,4 +91,22 @@ class TransferTests(unittest.TestCase):
   self.assertEqual(m.documents(transfer.root/'robinlab_inputs.jsonl'),{'capture':live})
   self.assertEqual((transfer.root/'robinlab_inputs.jsonl').stat().st_mode & 0o777,0o600)
 
+ def test_paged_snapshot_keeps_one_snapshot_and_seals_only_after_exhaustion(self):
+  self.args.paged_explorer_collections='robinlab_inputs';transfer=m.Transfer(self.args)
+  pages=[{'snapshot':'one','items':[{'deleted':False,'content':{'id':'a'}}],'nextCursor':'next','exhausted':False}, {'snapshot':'one','items':[{'deleted':False,'content':{'id':'b'}}],'nextCursor':None,'exhausted':True}]
+  with patch.object(transfer,'run',side_effect=pages) as run:
+   transfer.snapshot(['robinlab_inputs']);self.assertIn('--cursor',run.call_args_list[1].args[1]);self.assertNotIn('--all',run.call_args_list[0].args[1])
+  self.assertEqual(m.documents(transfer.root/'robinlab_inputs.jsonl'),{'a':{'id':'a'},'b':{'id':'b'}})
+  self.assertEqual(transfer.state['export-robinlab_inputs']['snapshot'],'one')
+ def test_paged_snapshot_rejects_a_changed_snapshot_without_sealing(self):
+  self.args.paged_explorer_collections='robinlab_inputs';transfer=m.Transfer(self.args)
+  pages=[{'snapshot':'one','items':[],'nextCursor':'next','exhausted':False},{'snapshot':'two','items':[],'nextCursor':None,'exhausted':True}]
+  with patch.object(transfer,'run',side_effect=pages):
+   with self.assertRaisesRegex(ValueError,'snapshot changed'):transfer.snapshot(['robinlab_inputs'])
+  self.assertNotIn('sha256',transfer.state.get('export-robinlab_inputs',{}))
+ def test_streamed_logical_digest_matches_the_existing_format(self):
+  import hashlib
+  rows={'z':{'name':'é','value':[1,None]},'a':{'id':'a','nested':{'z':2,'a':1}}}
+  self.assertEqual(m.logical_digest(rows),hashlib.sha256(json.dumps(rows,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest())
+
 if __name__=='__main__':unittest.main()

@@ -6,6 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {auditedDocuments} from './investment-explorer.mjs';
+import {snapshotRows} from './investment-snapshot.mjs';
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const canonical=value=>JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
 export async function reconcileExact({request,id,before,after,schemaVersion,mutationId}){
@@ -18,10 +19,7 @@ export async function reconcileExact({request,id,before,after,schemaVersion,muta
   assert.equal(result.status,'conflict');
  }throw Error('Concurrent destination mutation; migration stopped');
 }
-async function rows(root,name,manifest){
- const bytes=await readFile(resolve(root,name+'.jsonl'));assert.equal(hash(bytes),manifest.collections[name].sha256);
- const rows=bytes.toString().split('\n').filter(x=>x.trim()).map(x=>JSON.parse(x));const map=new Map(rows.map(row=>[row.id,row]));assert.equal(map.size,rows.length);assert.equal(rows.length,manifest.collections[name].count);return map;
-}
+const rows=(root,name,manifest)=>snapshotRows(resolve(root,name+'.jsonl'),manifest.collections[name]);
 async function main(){
  const [source,baseline,configFile,cliPath,output,collections,...flags]=process.argv.slice(2);assert.ok(collections,'Usage: SOURCE BASELINE CONFIG CLI_ENTRY PRIVATE_JOURNAL COLLECTIONS [--apply] [--publish-head] [--concurrency 1..4]');
  const config=JSON.parse(await readFile(configFile,'utf8')),a=JSON.parse(await readFile(resolve(source,'manifest.json'),'utf8')),b=JSON.parse(await readFile(resolve(baseline,'manifest.json'),'utf8'));

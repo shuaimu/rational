@@ -184,3 +184,10 @@ were retired, while destination credentials were untouched. After a full claim
 lease, another complete job inventory verified no active checkpoint, running
 worker, uncertain job, or cleanup cursor. Final snapshot verification now also
 rejects terminal cleanup cursors and needs-attention jobs explicitly.
+
+The final saved-input bulk export exceeded the 512 MiB artifact limit. The paged
+explorer fallback preserves one snapshot and streams the output; regression tests
+cover changed snapshots, completed pagination, and canonical digest compatibility.
+Sixteen Python migration tests and five Node snapshot/reconciliation tests pass,
+including recording concurrent successes before a failed operation and resuming
+without a repeated write. Full snapshot parity remains required before publication.

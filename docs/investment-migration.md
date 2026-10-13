@@ -149,6 +149,13 @@ directory. This uses short-lived audited explorer grants, verifies exact
 immutable collisions, and resumes with the same mutation IDs. Never pass
 credentials in arguments themselves.
 
+For collections larger than the platform's 512 MiB bulk-artifact limit, use
+`--paged-explorer-collections robinlab_inputs`. This writes bounded pages directly
+to NDJSON, requires one unchanged snapshot handle and strictly increasing IDs,
+and seals only an exhausted snapshot. An expired cursor stops the export; rerun
+only while the source remains frozen. Verification and reconciliation stream
+NDJSON instead of constructing a single JavaScript string for the collection.
+
 Bulk export of captures larger than 192 KiB requires Mako Cloud PR #11. The
 rehearsal used audited explorer browsing with a 2 MiB page budget and a single
 stable snapshot. Do not combine unrelated pages or seal an incomplete download.

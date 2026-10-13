@@ -7,20 +7,27 @@ writer-fence evidence described in the integration runbook.
 import argparse, hashlib, json, re, subprocess
 from pathlib import Path
 
-def sha(path):return hashlib.sha256(path.read_bytes()).hexdigest()
+def sha(path):
+ h=hashlib.sha256()
+ with path.open('rb') as content:
+  for chunk in iter(lambda:content.read(1024*1024),b''):h.update(chunk)
+ return h.hexdigest()
 def atomic(path,value):
  tmp=path.with_suffix('.tmp');tmp.write_text(json.dumps(value,indent=2)+'\n');tmp.chmod(0o600);tmp.replace(path)
 def documents(path):
  result={}
- for line in path.read_text().splitlines():
-  if not line.strip():continue
-  row=json.loads(line);key=row['id']
-  if key in result:raise ValueError('Duplicate document id in '+path.name)
-  result[key]=row
+ with path.open() as content:
+  for line in content:
+   if not line.strip():continue
+   row=json.loads(line);key=row['id']
+   if key in result:raise ValueError('Duplicate document id in '+path.name)
+   result[key]=row
  return result
 
 def logical_digest(rows):
- return hashlib.sha256(json.dumps(rows,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
+ h=hashlib.sha256()
+ for chunk in json.JSONEncoder(sort_keys=True,separators=(',',':'),ensure_ascii=False).iterencode(rows):h.update(chunk.encode())
+ return h.hexdigest()
 
 def import_parts(rows):
  # The deployed importer groups up to 32 records per RPC. Small rows may share
@@ -62,6 +69,30 @@ class Transfer:
   data=json.loads(result.stdout);job=data.get('job',data)
   if 'jobId' in job:self.state.setdefault(key,{})['jobId']=job['jobId'];atomic(self.state_path,self.state)
   return data
+ def paged_snapshot(self,key,name,path):
+  cursor=None;snapshot=None;last=None;pages=0;count=0
+  with path.open('w') as output:
+   path.chmod(0o600)
+   while True:
+    words=['explorer','browse',name,'--limit','200','--duration','300','--reason','Verified Rational Investment migration snapshot']
+    if cursor is not None:words+=['--cursor',cursor]
+    page=self.run(key+'-page',words)
+    if snapshot is None:snapshot=page['snapshot']
+    if not snapshot or page['snapshot']!=snapshot:raise ValueError('Explorer snapshot changed: '+name)
+    for document in page['items']:
+     row=document['content'];ident=row['id']
+     if last is not None and ident<=last:raise ValueError('Explorer snapshot order repeated: '+name)
+     last=ident
+     if not document['deleted']:output.write(json.dumps(row,separators=(',',':'),ensure_ascii=False)+'\n');count+=1
+    pages+=1;next_cursor=page.get('nextCursor')
+    if next_cursor is None:
+     if not page.get('exhausted'):raise ValueError('Incomplete explorer snapshot: '+name)
+     break
+    if next_cursor==cursor:raise ValueError('Explorer cursor did not advance: '+name)
+    cursor=next_cursor
+    if pages%25==0:print('Snapshot pages',name,pages,'documents',count,flush=True)
+  self.state[key]={**self.state.get(key,{}),'transport':'paged-explorer','snapshot':snapshot,'pages':pages,'count':count}
+  atomic(self.state_path,self.state)
  def snapshot(self,names):
   manifest={'scope':self.state['scope'],'collections':{}}
   for name in names:
@@ -70,7 +101,9 @@ class Transfer:
     if not path.exists() or sha(path)!=receipt['sha256']:raise ValueError('Sealed snapshot changed: '+name)
    else:
     if path.exists():path.unlink() # only an unsealed, interrupted download
-    if name in getattr(self.args,'explorer_collections','').split(','):
+    if name in getattr(self.args,'paged_explorer_collections','').split(','):
+     self.paged_snapshot(key,name,path)
+    elif name in getattr(self.args,'explorer_collections','').split(','):
      response=self.run(key,['explorer','browse',name,'--limit','25','--duration','300','--all','--reason','Verified Rational Investment migration snapshot'])
      if response.get('nextCursor') is not None:raise ValueError('Incomplete explorer snapshot: '+name)
      with path.open('w') as output:
@@ -140,6 +173,7 @@ def main():
  parser.add_argument('action',choices=['snapshot','import'])
  for name in ['cli','environment','output','collections']:parser.add_argument('--'+name,required=True)
  parser.add_argument('--config',default='rational.config.json');parser.add_argument('--profile',default='robinlab');parser.add_argument('--snapshot');parser.add_argument('--existing-snapshot');parser.add_argument('--publish-head',action='store_true')
+ parser.add_argument('--paged-explorer-collections',default='',help='Stream bounded pages from one stable audited explorer snapshot')
  parser.add_argument('--explorer-collections',default='',help='Use one audited, byte-bounded explorer snapshot for these large-document collections')
  args=parser.parse_args();transfer=Transfer(args);names=args.collections.split(',')
  if any(not re.fullmatch('[a-z][a-z0-9_]{0,62}',n) for n in names):raise ValueError('Invalid collection name')
