@@ -1,0 +1,8 @@
+# Keep the reviewed browser calculation bundle in clean checkouts.
+*
+!.gitignore
+!package.json
+!robinlab_wasm.js
+!robinlab_wasm.d.ts
+!robinlab_wasm_bg.wasm
+!robinlab_wasm_bg.wasm.d.ts

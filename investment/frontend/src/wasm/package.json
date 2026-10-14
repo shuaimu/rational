@@ -1,0 +1,15 @@
+{
+  "name": "robinlab-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "robinlab_wasm_bg.wasm",
+    "robinlab_wasm.js",
+    "robinlab_wasm.d.ts"
+  ],
+  "main": "robinlab_wasm.js",
+  "types": "robinlab_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
