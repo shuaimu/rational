@@ -70,6 +70,28 @@ Only after parity and authorization tests pass, enable the destination API and e
 
 Before destination writes are enabled, abandon a failed staging attempt and restore source admission only after confirming the destination is inactive. After destination writes are accepted, pause/fence destination investment admission and reconcile jobs; use a verified reverse delta/full current-state transfer before re-enabling source writes. Reverting only the frontend or restoring an old snapshot is not a valid data rollback. Retain protected exports, source resources, and a cutover journal until the new deployment is verified; deletion requires a separate decision.
 
+### 7. Finish verification without a local coordinator
+
+After the completed import, the remaining saved-input comparison runs as a
+temporary scheduled Mako function. Separate service credentials allow only reads
+of source/destination inputs and heads; another credential writes only a private
+migration checkpoint collection. Each invocation compares bounded ordered pages
+using the existing `by_job` indexes, persists both continuation cursors with CAS,
+and releases its lease. Lost responses and interrupted invocations resume the
+last durable checkpoint. Mismatches, changed heads, unexpected counts, or
+authorization failures block the verifier. No browser identity can read its
+checkpoint collection, and no migration credential can publish the portfolio.
+
+The source remains fenced and the destination remains read-only throughout this
+scan. The complete saved-input equality receipt combines with the already sealed
+exact comparisons for the other 13 non-head collections and the verified source's
+graph/history/captures and nine native/Wasm reports. Identical complete data under
+the same calculation build preserves those results without downloading and
+recomputing the multi-gigabyte snapshot locally. Pin prior evidence and the source
+head in the private verification plan. Final head publication, browser checks,
+function promotion, and Pages publication retain their existing gates. Retire the
+temporary schedule and scoped credentials after verifying its completed receipt.
+
 ## Risks / Trade-offs
 
 - Shared session refresh races → one shared adapter, cross-tab lock/re-read, storage-event propagation, and tests with both entry points open.

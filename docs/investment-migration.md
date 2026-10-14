@@ -21,10 +21,13 @@ consuming the same refresh cookie. Its eight CI checks passed, and interrupted
 commands resumed the original jobs and journals after installation.
 
 The October 14 reconciliation and fresh logical comparison passed for all 13
-non-head collections other than saved inputs. The saved-input import is running
-from its original resumable journal. Source writer fences remain in place.
+non-head collections other than saved inputs. All 82,516 missing saved inputs
+were imported successfully in 215 parts with no reported row failures. The final
+cloud export continues independently; its local download/coordinator is stopped.
+The remaining comparison is running in the scheduled cloud verifier described below.
+Source writer fences remain in place.
 Destination functions are read-only, its Investment schedule is paused and its
-head is unpublished. Complete input transfer and final graph/report parity,
+head is unpublished. Complete input equality verification and final graph/report parity,
 application activation, browser qualification and Pages publication remain
 pending. Private receipts are in
 `.local/integration/final-cutover-20261014/`.
@@ -136,6 +139,27 @@ content digest, capture manifest, and native/Wasm financial report parity. It
 never prints financial values. Environment/user identifiers do not appear in
 exported documents: only policies, auth namespaces and function bindings change.
 SnapTrade provider user IDs and secrets retain their provider identity.
+
+### Serverless final saved-input verification
+
+`investment/mako/serverless/migration/` contains a temporary scheduled verifier.
+It runs every minute and compares source and destination `robinlab_inputs` in
+pages of at most 32 documents ordered by
+the existing `by_job` index. Both cursors, count, rolling digest and lease are
+stored with compare-and-swap in the private `robinlab_migration_checks` collection.
+Separate source/destination credentials permit reads only of saved inputs and
+portfolio heads. The journal credential can write only the checkpoint collection.
+Neither the function nor its credentials can publish a portfolio or admit imports.
+
+The deployment's private plan pins the verified source head, expected input count,
+source verification digest and prior 13-collection parity evidence. A successful
+complete input comparison, while both writer fences remain in place, proves the
+destination matches the already verified source graph, captures, replay history
+and nine native/Wasm financial outputs. No local data-processing loop or native
+calculation process is needed. Keep the existing final export job; do not create a
+replacement just to watch its progress. Review the cloud checkpoint on return,
+then perform the existing publication and browser gates. Retire this temporary
+schedule and its three credentials after preserving the final receipt.
 
 An empty destination namespace starts without source tombstones. Deleted source
 rows remain absent; immutable command history preserves ledger replay. Do not

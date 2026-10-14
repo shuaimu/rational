@@ -35,6 +35,7 @@
 - [x] 5.2 Add explicit identity transformation records, content-addressed graph checks, and destination parity checks for logical rows, counters, digests, mappings, and financial outputs.
 - [ ] 5.3 Preserve accepted command IDs and replay receipts across the move; reconcile browser-persisted pending operations and test lost responses, interrupted imports, expired uploads, and incomplete provider operations.
 - [x] 5.4 Rehearse resumability, pre-activation rollback, and rollback after a destination write using synthetic state; prove no duplicate provider side effects or hourly admissions.
+- [ ] 5.5 Deploy a bounded scheduled saved-input verifier with read-only source/destination credentials and a private CAS checkpoint journal; prove scheduled progress without a local coordinator and retain the completed parity receipt before cutover.
 
 ## 6. Validate the consolidated implementation
 
