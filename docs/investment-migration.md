@@ -20,11 +20,24 @@ are serialized across processes, preventing concurrent migration commands from
 consuming the same refresh cookie. Its eight CI checks passed, and interrupted
 commands resumed the original jobs and journals after installation.
 
-Source writer fences remain in place. Destination functions are read-only, its
-Investment schedule is paused and its head is unpublished. Final destination
-reconciliation and fresh parity, application activation, browser qualification
-and Pages publication remain pending. Private receipts are in
+The October 14 reconciliation and fresh logical comparison passed for all 13
+non-head collections other than saved inputs. The saved-input import is running
+from its original resumable journal. Source writer fences remain in place.
+Destination functions are read-only, its Investment schedule is paused and its
+head is unpublished. Complete input transfer and final graph/report parity,
+application activation, browser qualification and Pages publication remain
+pending. Private receipts are in
 `.local/integration/final-cutover-20261014/`.
+
+Two additional platform fixes are merged and deployed. Mako Cloud PR #22 aligns
+the public proxy's exact data-job artifact PUT route with the API's 512 MiB bound;
+its former 32 MB ceiling rejected a valid 32 MiB import chunk. The original job
+resumed and succeeded after deployment. All eight CI checks and real Caddy size
+boundary tests passed. PR #21 makes quota checkpoints use the replication policy
+actually enforced by the deployment, removing misleading reports of the old
+120-request limit. Fresh telemetry reports healthy service status and no such
+request-rate checkpoint. Service/proxy configuration and retained backup state
+were preserved across the deployment.
 
 ## Earlier staging and platform history
 
