@@ -108,7 +108,7 @@ async function recover(current: Runtime, reason: string, security = false): Prom
   if (current.recovery) return current.recovery;
   current.recovery = (async () => {
     update({ phase: 'recovering', message: 'Rebuilding the authorized local cache…' });
-    if (security) { await signOut(); return; }
+    if (security) { console.warn('Investment session reset', { source: 'replication', reason }); await signOut(); return; }
     await current.meta.state.put({ key: 'reset', value: reason });
     await stop(current); runtime = undefined; opening = undefined;
     await removeDescriptor(current.descriptor, false);

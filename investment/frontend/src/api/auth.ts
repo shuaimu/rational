@@ -77,10 +77,10 @@ export async function validateSession(): Promise<void> {
   try {
     const token = await auth.validAccessToken();
     const response = await boundedFetch(`${config.endpoint}/v1/projects/${config.projectId}/environments/${config.environmentId}/auth/user`, { headers: { Authorization: `Bearer ${token}`, 'X-Mako-Key': config.publicProjectKey } });
-    if ([401, 403].includes(response.status)) { await signOut(); return; }
+    if ([401, 403].includes(response.status)) { console.warn('Investment session reset', { source: 'user-validation', status: response.status }); await signOut(); return; }
     if (!response.ok) { update({ offline: true }); return; }
     const user = await response.json();
-    if (user.status !== 'active') { await signOut(); return; }
+    if (user.status !== 'active') { console.warn('Investment session reset', { source: 'inactive-user' }); await signOut(); return; }
     if (user.id !== config.ownerId) { await adopt(auth.currentSession()); return; }
     update({ offline: false });
   } catch (error) {

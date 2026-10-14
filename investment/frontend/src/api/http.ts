@@ -94,7 +94,7 @@ api.interceptors.response.use(async (response) => {
     await auth.refreshSession();
     return api.request(request);
   }
-  if (error.response?.status === 401) await signOut();
+  if (error.response?.status === 401) { console.warn('Investment session reset', { source: 'api-after-renewal' }); await signOut(); }
   if (request?.robinCommand && error.response && [400, 404, 410, 413, 422].includes(error.response.status)) complete(request.robinCommand);
   // Axios errors carry headers and request bodies. Expose only a user message.
   const message = typeof error.response?.data?.error === 'string' ? error.response.data.error : !error.response ? 'The API is unavailable. Retry this operation when connected.' : `The request failed (${error.response.status}).`;
