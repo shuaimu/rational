@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "owner-read",
+      "effect": "allow",
+      "operations": [
+        "read"
+      ],
+      "expression": "identity.user_id == \"usr_bff00e348e6052c4559a7b1a2ba4c50c170121d6ad67439e9cd423ccd1d65df5\""
+    }
+  ]
+}

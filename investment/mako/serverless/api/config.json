@@ -1,0 +1,27 @@
+{
+  "verifyJwt": true,
+  "regions": [
+    "us-east-1-beta"
+  ],
+  "secretNames": [
+    "ROBINLAB_FUNCTION_PORTFOLIO_KEY",
+    "ROBINLAB_FUNCTION_CACHE_KEY",
+    "ROBINLAB_FUNCTION_JOBS_KEY",
+    "SNAPTRADE_CLIENT_ID",
+    "SNAPTRADE_CONSUMER_KEY",
+    "ROBINLAB_FUNCTION_RESULTS_KEY",
+    "ROBINLAB_FUNCTION_STATUS_KEY",
+    "ROBINLAB_OWNER_ID"
+  ],
+  "limits": {
+    "concurrency": 2,
+    "cpuMilliseconds": 5000,
+    "wallMilliseconds": 25000,
+    "memoryBytes": 268435456,
+    "requestBytes": 1048576,
+    "responseBytes": 1048576
+  },
+  "allowedHosts": [
+    "api.snaptrade.com"
+  ]
+}

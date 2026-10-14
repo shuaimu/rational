@@ -1,0 +1,13 @@
+{
+  "type": "object",
+  "primaryKey": "id",
+  "required": ["id", "planDigest", "status", "verifiedCount", "leaseUntil"],
+  "properties": {
+    "id": {"type": "string", "maxLength": 128},
+    "planDigest": {"type": "string", "maxLength": 64},
+    "status": {"type": "string", "enum": ["running", "retry", "verified", "blocked"]},
+    "verifiedCount": {"type": "integer", "minimum": 0},
+    "leaseUntil": {"type": "integer", "minimum": 0}
+  },
+  "additionalProperties": true
+}

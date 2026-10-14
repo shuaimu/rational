@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Rust
+/target/
+
+# Python virtualenv
+/.venv/
+__pycache__/
+*.pyc
+
+# Local runtime data
+/robinlab.db
+/.local/
+
+# Environment files
+.env
+.env.*
+
+# Frontend artifacts (also covered by frontend/.gitignore)
+/frontend/node_modules/
+/frontend/dist/

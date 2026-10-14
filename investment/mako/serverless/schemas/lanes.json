@@ -1,0 +1,1 @@
+{"type":"object","additionalProperties":false,"required":["id","jobId"],"properties":{"id":{"type":"string","pattern":"^[a-z_]{1,32}$","maxLength":32},"jobId":{"type":"string","pattern":"^j_[a-f0-9]{64}$","maxLength":66}}}

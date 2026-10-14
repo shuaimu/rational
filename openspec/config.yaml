@@ -1,0 +1,43 @@
+schema: spec-driven
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+#   context: |
+#     Tech stack: TypeScript, React, Node.js
+#     We use conventional commits
+#     Domain: e-commerce platform
+context: |
+  RobinLab is a Rust + React stock and option trading tracker.
+  Runtime: authenticated Mako Cloud API and durable scheduled job functions; Rust domain logic compiled to Wasm. Axum/SQLx/SQLite remain for tools, parity and explicit compute rollback.
+  Frontend: TypeScript, React, Vite, Tailwind CSS, TanStack Query, authenticated MakoDB replication into RxDB/Dexie, and Wasm. Supabase is obsolete.
+  Shared calculation logic belongs in crates/core when it affects portfolio, P&L, performance, splits, or option behavior.
+  crates/core must stay wasm32-compatible and avoid host-only dependencies such as SQLx, Tokio, Reqwest, and PyO3.
+  Frontend route-relative calls use the configured cloud function endpoint with owner JWT and stable retry IDs. There is no localhost API fallback or proxy. Exactly one Mako dispatcher owns scheduled imports.
+  Validate code changes with cargo test plus frontend lint/build when relevant.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing
+
+# Implementation scope: Rational owns both apps. The approved integration also
+# includes retiring makodb/mako-cloud scripts/export-rational-app.mjs and its tests/docs.

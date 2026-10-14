@@ -1,0 +1,58 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "row"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 66,
+      "maxLength": 66,
+      "pattern": "^r_[0-9a-f]{64}$"
+    },
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "price_date",
+        "price",
+        "source",
+        "fetched_at",
+        "is_market_close"
+      ],
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "price_date": {
+          "type": "string",
+          "maxLength": 10,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "price": {
+          "type": "number"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "fetched_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 64
+        },
+        "is_market_close": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

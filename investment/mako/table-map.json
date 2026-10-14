@@ -1,0 +1,14 @@
+{
+  "accounts": {"key": ["id"], "columns": ["id", "code", "name", "account_type"], "target": "portfolio_public", "visibility": "owner", "unique": [["code"]]},
+  "tickers": {"key": ["id"], "columns": ["id", "symbol", "name"], "target": "portfolio_public", "visibility": "owner", "unique": [["symbol"]]},
+  "transactions": {"key": ["id"], "columns": ["id", "account_id", "ticker_id", "transaction_type", "quantity", "price", "cost", "fees", "date", "option_type", "strike_price", "expiration_date", "option_code", "status", "source", "created_at", "updated_at"], "target": "portfolio_public", "visibility": "owner"},
+  "ticker_splits": {"key": ["symbol", "split_date"], "columns": ["symbol", "split_date", "multiplier"], "target": "portfolio_public", "visibility": "owner"},
+  "account_value_snapshots": {"key": ["account_id", "as_of_date"], "columns": ["account_id", "as_of_date", "computed_value", "broker_value", "created_at"], "target": "portfolio_public", "visibility": "owner"},
+  "price_cache": {"key": ["symbol", "price_date"], "columns": ["symbol", "price_date", "price", "source", "fetched_at", "is_market_close"], "target": "historical_prices", "visibility": "owner", "indexes": [["symbol", "price_date"], ["price_date", "symbol"]]},
+  "latest_price_cache": {"key": ["symbol"], "columns": ["symbol", "latest_price_date", "latest_price", "source", "fetched_at"], "target": "latest_prices", "visibility": "owner"},
+  "provider_request_log": {"key": ["id"], "columns": ["id", "provider", "endpoint", "success", "status_code", "requested_at"], "redacted": ["error"], "target": "provider_requests", "visibility": "worker", "indexes": [["requested_at", "id"], ["provider", "requested_at", "id"]]},
+  "split_fetch": {"key": ["symbol"], "columns": ["symbol", "fetched_at"], "target": "split_fetch", "visibility": "worker"},
+  "snaptrade_users": {"key": ["id"], "columns": ["id", "snaptrade_user_id", "created_at"], "redacted": ["user_secret"], "target": "portfolio_private", "visibility": "worker"},
+  "snaptrade_accounts": {"key": ["snaptrade_account_id"], "columns": ["snaptrade_account_id", "snaptrade_user_id", "account_id", "institution_name", "account_number", "account_name", "last_synced_date", "created_at", "updated_at", "balance", "balance_date"], "redacted": ["brokerage_authorization"], "target": "portfolio_private", "visibility": "worker"},
+  "schema_migrations": {"key": ["id"], "columns": ["id", "name", "applied_at"], "target": "source_archive", "visibility": "migration-only", "sourceOnly": true}
+}

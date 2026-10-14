@@ -1,0 +1,31 @@
+{
+  "verifyJwt": false,
+  "regions": [
+    "us-east-1-beta"
+  ],
+  "secretNames": [
+    "ROBINLAB_FUNCTION_PORTFOLIO_KEY",
+    "ROBINLAB_FUNCTION_JOBS_KEY",
+    "ROBINLAB_FUNCTION_INPUTS_KEY",
+    "ROBINLAB_FUNCTION_CACHE_KEY",
+    "SNAPTRADE_CLIENT_ID",
+    "SNAPTRADE_CONSUMER_KEY",
+    "ROBINLAB_FUNCTION_LANES_KEY",
+    "ROBINLAB_FUNCTION_MAINTENANCE_KEY",
+    "ROBINLAB_FUNCTION_LOGS_KEY",
+    "TWELVE_DATA_API_KEY"
+  ],
+  "limits": {
+    "concurrency": 1,
+    "cpuMilliseconds": 5000,
+    "wallMilliseconds": 25000,
+    "memoryBytes": 268435456,
+    "requestBytes": 1048576,
+    "responseBytes": 1048576
+  },
+  "allowedHosts": [
+    "api.snaptrade.com",
+    "query1.finance.yahoo.com",
+    "api.twelvedata.com"
+  ]
+}

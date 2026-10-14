@@ -1,0 +1,26 @@
+{
+  "verifyJwt": true,
+  "regions": [
+    "us-east-1-beta"
+  ],
+  "secretNames": [
+    "ROBINLAB_QUALIFY_READ_KEY",
+    "ROBINLAB_QUALIFY_STAGE_KEY",
+    "ROBINLAB_QUALIFY_UPLOAD_KEY",
+    "TWELVE_DATA_API_KEY"
+  ],
+  "limits": {
+    "concurrency": 2,
+    "cpuMilliseconds": 5000,
+    "wallMilliseconds": 25000,
+    "memoryBytes": 268435456,
+    "requestBytes": 1048576,
+    "responseBytes": 1048576
+  },
+  "allowedHosts": [
+    "api.snaptrade.com",
+    "api.twelvedata.com",
+    "financialmodelingprep.com",
+    "query1.finance.yahoo.com"
+  ]
+}

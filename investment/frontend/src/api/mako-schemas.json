@@ -1,0 +1,373 @@
+{
+  "portfolio_heads": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "id",
+      "format",
+      "sequence",
+      "public_root",
+      "private_root",
+      "command",
+      "next_ids"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "enum": [
+          "portfolio"
+        ],
+        "maxLength": 32
+      },
+      "format": {
+        "type": "integer",
+        "enum": [
+          1
+        ]
+      },
+      "sequence": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 9007199254740991
+      },
+      "public_root": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "bytes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 66,
+            "maxLength": 66,
+            "pattern": "^m_[0-9a-f]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 32768
+          }
+        }
+      },
+      "private_root": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "bytes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 66,
+            "maxLength": 66,
+            "pattern": "^m_[0-9a-f]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 32768
+          }
+        }
+      },
+      "command": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "bytes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 66,
+            "maxLength": 66,
+            "pattern": "^c_[0-9a-f]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 32768
+          }
+        }
+      },
+      "next_ids": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "account",
+          "ticker",
+          "transaction",
+          "brokerage_user"
+        ],
+        "properties": {
+          "account": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "ticker": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "transaction": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "brokerage_user": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        }
+      }
+    }
+  },
+  "portfolio_public": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "id",
+      "payload"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "minLength": 66,
+        "maxLength": 66,
+        "pattern": "^[pmc]_[0-9a-f]{64}$"
+      },
+      "payload": {
+        "type": "string",
+        "maxLength": 32768
+      }
+    }
+  },
+  "latest_prices": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "id",
+      "row"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "minLength": 66,
+        "maxLength": 66,
+        "pattern": "^r_[0-9a-f]{64}$"
+      },
+      "row": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "symbol",
+          "latest_price_date",
+          "latest_price",
+          "source",
+          "fetched_at"
+        ],
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "latest_price_date": {
+            "type": "string",
+            "maxLength": 10,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "latest_price": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "fetched_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          }
+        }
+      }
+    }
+  },
+  "historical_prices": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "id",
+      "row"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "minLength": 66,
+        "maxLength": 66,
+        "pattern": "^r_[0-9a-f]{64}$"
+      },
+      "row": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "symbol",
+          "price_date",
+          "price",
+          "source",
+          "fetched_at",
+          "is_market_close"
+        ],
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "price_date": {
+            "type": "string",
+            "maxLength": 10,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "price": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "fetched_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "is_market_close": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "cache_status": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "id",
+      "generation",
+      "state",
+      "jobId",
+      "latest",
+      "historicalDigest",
+      "historicalCount",
+      "updatedAt"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "enum": [
+          "cache"
+        ],
+        "maxLength": 32
+      },
+      "generation": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "state": {
+        "type": "string",
+        "enum": [
+          "ready",
+          "updating"
+        ]
+      },
+      "jobId": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "maxLength": 66
+      },
+      "latest": {
+        "type": "array",
+        "maxItems": 10000,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "symbol",
+            "latest_price_date",
+            "latest_price",
+            "source",
+            "fetched_at"
+          ],
+          "properties": {
+            "symbol": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "latest_price_date": {
+              "type": "string",
+              "maxLength": 10,
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "latest_price": {
+              "type": "number"
+            },
+            "source": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "fetched_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 64
+            }
+          }
+        }
+      },
+      "historicalDigest": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$",
+        "maxLength": 64
+      },
+      "historicalCount": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 500000
+      },
+      "updatedAt": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      }
+    }
+  }
+}

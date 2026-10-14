@@ -1,0 +1,59 @@
+import {ensure,batches} from '../shared/errors.js';
+import {boundedJson} from '../shared/providers.js';
+export class SnapTradeCapture {
+ constructor({repository,broker,artifacts,cache,domain,http=fetch}){Object.assign(this,{repository,broker,artifacts,cache,domain,http});}
+ async step(job,reference){
+  const id=job.id,options=job.input,asOf=new Date(job.createdAt).toISOString().slice(0,10);
+  let state;
+  if(!reference){
+   const {dataset}=await this.repository.load();
+   state={...this.domain({action:'plan_snaptrade_capture',dataset,options,today:asOf}),user:this.broker.user(dataset),phase:'activities',account:0,offset:0,capturedBytes:0,pages:[],perAccount:[],stocks:[],balances:{},refreshed:[],latest:[]};
+   return {reference:await this.artifacts.save(id,state)};
+  }
+  state=await this.artifacts.load(id,reference);
+  if(state.phase==='activities'){
+   const account=state.linked[state.account];
+   if(!account){state.phase=options.apply&&!options.roll_detect?'positions':'assemble';state.account=0;}
+   else{
+    const response=await this.broker.activities(state.user,account.sid,{offset:state.offset,limit:1000,startDate:account.start});
+    const activities=Array.isArray(response)?response:response.data;ensure(Array.isArray(activities)&&activities.length<=1000,503,'Broker activity page is invalid');
+    const normalized=this.domain({action:'normalize_snaptrade',account:account.code,activities});
+    const page=await this.artifacts.save(id,normalized);state.capturedBytes+=page.bytes;ensure(state.capturedBytes<=32*1024*1024,413,'Broker capture exceeds byte bounds');state.pages.push(page);ensure(state.pages.length<=1000,413,'Broker capture exceeds page bounds');
+    let report=state.perAccount[state.account];if(!report){report={account:account.code,snaptrade_account_id:account.sid,start_date:account.start,activities_pulled:0,normalized:0,earliest:null,latest:null};state.perAccount.push(report);}
+    report.activities_pulled+=activities.length;report.normalized+=normalized.length;
+    for(const row of normalized){if(!report.earliest||row.date<report.earliest)report.earliest=row.date;if(!report.latest||row.date>report.latest)report.latest=row.date;if(row.option_code)state.splitSymbols.push(row.ticker_symbol);}
+    state.splitSymbols=[...new Set(state.splitSymbols)].sort();state.offset+=activities.length;
+    const total=response.pagination?.total??0;
+    if(!activities.length||activities.length<1000||total>0&&state.offset>=total){state.account++;state.offset=0;}
+   }
+  }else if(state.phase==='positions'){
+   const account=state.linked[state.account];
+   if(!account){state.phase='balances';}
+   else{state.stocks.push(...this.domain({action:'normalize_snaptrade_stocks',account:account.code,positions:await this.broker.positions(state.user,account.sid)}));state.account++;}
+  }else if(state.phase==='balances'){
+   const accounts=await this.broker.accounts(state.user);ensure(Array.isArray(accounts),503,'Broker balance response is invalid');
+   for(const account of accounts){const amount=account.balance?.total?.amount;if(typeof account.id==='string'&&Number.isFinite(amount))state.balances[account.id]=amount;}
+   state.phase='splits';state.splitOffset=0;
+  }else if(state.phase==='splits'){
+   const symbol=state.splitSymbols[state.splitOffset];
+   if(!symbol){state.latest=await this.cache.latest();state.phase='assemble';}
+   else{
+    const prior=await this.cache.get('split_fetch',[symbol]),fetched=prior?.body.row.fetched_at;
+    const fresh=fetched&&Date.parse(fetched.replace(' ','T')+'Z')>job.createdAt-7*86400000;
+    if(!fresh){
+     // Preserve the native best-effort HTTPS split feed independently of the
+     // disabled Yahoo quote/Python provider. Capture failure as an empty feed.
+     let response={};
+     try{const result=await this.http(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=0&period2=9999999999&interval=1d&events=split`,{headers:{'User-Agent':'Mozilla/5.0'},redirect:'manual',signal:AbortSignal.timeout(12000)});if(result.ok)response=await boundedJson(result);else await result.body?.cancel();}catch{}
+     state.splits=state.splits.filter(row=>row.symbol!==symbol);state.splits.push(...this.domain({action:'normalize_splits',symbol,response}));state.refreshed.push(symbol);
+    }
+    state.splitOffset++;
+   }
+  }else if(state.phase==='assemble'){
+   const pages=await batches(state.pages,4,ref=>this.artifacts.load(id,ref));
+   const captured={linked:state.linked.map(a=>[a.sid,a.account_id,a.code]),transactions:pages.flat(),per_account:state.perAccount,stocks:state.stocks,balances:state.balances,splits:state.splits,refreshed_split_symbols:state.refreshed,latest:state.latest,today:state.today};
+   return {done:true,captured:await this.artifacts.save(id,captured)};
+  }else ensure(false,503,'Broker capture checkpoint is invalid');
+  return {reference:await this.artifacts.save(id,state)};
+ }
+}

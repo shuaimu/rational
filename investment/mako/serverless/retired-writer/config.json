@@ -1,0 +1,13 @@
+{
+  "limits": {
+    "concurrency": 4,
+    "cpuMilliseconds": 1000,
+    "memoryBytes": 134217728,
+    "requestBytes": 1048576,
+    "responseBytes": 1048576,
+    "wallMilliseconds": 10000
+  },
+  "regions": ["us-east-1-beta"],
+  "secretNames": [],
+  "verifyJwt": true
+}

@@ -72,11 +72,13 @@ export default defineConfig(({ command }) => {
               ? "same-origin"
               : (configFile.functionsEndpoint ?? null),
         };
-  const proxy: Record<string, ProxyOptions> = {};
+  const proxy: Record<string, ProxyOptions> = {
+    "^/investment(?:/|$)": { target: "http://127.0.0.1:5174", ws: true },
+  };
   if (liveEndpoint !== undefined) {
     proxy["/v1"] = {
       target: liveEndpoint,
-      changeOrigin: false,
+      changeOrigin: true,
       configure: (server) => {
         server.on("proxyRes", (proxyRes) => {
           // The live pull stream is server-sent events; never buffer it.
@@ -90,7 +92,7 @@ export default defineConfig(({ command }) => {
   if (functionsEndpoint !== undefined && functionsEndpoint !== null) {
     proxy["^/[^/]+--[^/]+/functions/v1/"] = {
       target: functionsEndpoint,
-      changeOrigin: false,
+      changeOrigin: true,
     };
   }
   return {

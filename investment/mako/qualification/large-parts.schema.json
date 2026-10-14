@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "payload"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "maxLength": 100
+    },
+    "payload": {
+      "type": "string",
+      "maxLength": 32768
+    }
+  }
+}

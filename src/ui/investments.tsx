@@ -88,7 +88,7 @@ export function InvestmentsScreen({
     >
       <PageHeader
         id="investments-title"
-        title="Investments"
+        title="Household holdings"
         subtitle="Every position the household holds, valued into the balance of the account that holds it."
         actions={
           canEdit && firstAccount !== undefined ? (

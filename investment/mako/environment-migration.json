@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "source": {
+    "endpoint": "https://cloud-test.makodb.com",
+    "projectId": "prj_43f3756d4588d7412cbe0b633a455695",
+    "environmentId": "env_833a71a6da540180b4e64c05cfb90e6d",
+    "ownerId": "usr_bff00e348e6052c4559a7b1a2ba4c50c170121d6ad67439e9cd423ccd1d65df5"
+  },
+  "destination": {
+    "endpoint": "https://cloud-test.makodb.com",
+    "projectId": "prj_43f3756d4588d7412cbe0b633a455695",
+    "environmentId": "env_482f584a064bb6dc32c443f7c746c5af",
+    "ownerId": "usr_d6a99f85b4b8fa2f555a7058"
+  },
+  "transforms": ["owner-read policy identity", "function owner binding", "local pending-operation scope"],
+  "preserve": ["portfolio content and command IDs", "provider identities and mappings", "accepted job IDs and upload expiry", "financial records and counters"],
+  "copyAuthenticationSessions": false
+}

@@ -48,7 +48,7 @@ const NAV: ReadonlyArray<{
   { route: { name: "budget" }, label: "Budget", icon: PieChart },
   { route: { name: "recurring" }, label: "Recurring", icon: Repeat },
   { route: { name: "goals" }, label: "Goals", icon: Target },
-  { route: { name: "investments" }, label: "Investments", icon: TrendingUp },
+  { route: { name: "investments" }, label: "Household holdings", icon: TrendingUp },
   { route: { name: "settings", page: "household" }, label: "Settings", icon: Settings },
 ];
 
@@ -106,6 +106,9 @@ export function Shell({
               </a>
             );
           })}
+          <a href={`${import.meta.env.BASE_URL}investment/`} className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground no-underline hover:bg-sidebar-accent">
+            <TrendingUp aria-hidden="true" className="size-4 shrink-0" />Investment
+          </a>
         </nav>
         <footer className="mt-auto grid gap-1 px-3 text-xs text-muted-foreground">
           <span data-testid="sync-activity">Sync: {household?.activity ?? "idle"}</span>

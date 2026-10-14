@@ -1,3 +1,4 @@
+import { sessionKey } from '../../shared/auth.js';
 import { type AuthUser, MakoAuthError } from "@mako-cloud/rxdb";
 import { BehaviorSubject, type Subscription } from "rxjs";
 
@@ -103,6 +104,7 @@ export class RationalApp {
   #directoryWatch: Subscription | null = null;
   #householdWatch: Subscription | null = null;
   #removeListeners: (() => void) | null = null;
+  #sharedSessionTransition: Promise<void> = Promise.resolve();
 
   constructor(options: RationalAppOptions) {
     this.config = options.config;
@@ -195,6 +197,40 @@ export class RationalApp {
       window.removeEventListener("online", onBrowserOnline);
       window.removeEventListener("offline", onConnectivity);
       unsubscribeTransport();
+    };
+    const onSharedSession = (event: StorageEvent) => {
+      if (event.key !== sessionKey(this.config)) return;
+      let incoming: { user?: { id?: string; authorizationEpoch?: number } } | null = null;
+      try { incoming = event.newValue === null ? null : JSON.parse(event.newValue); } catch { /* invalid session is signed out */ }
+      if (!incoming?.user || incoming.user.id !== this.state.user?.id || incoming.user.authorizationEpoch !== this.state.user?.authorizationEpoch) {
+        this.#patch((state) => ({ ...state, phase: "starting" }));
+      }
+      this.#sharedSessionTransition = this.#sharedSessionTransition.then(async () => {
+        const previous = this.state.user;
+        const user = await this.auth.restore();
+        if (user && user.id === previous?.id && this.#directory) {
+          // A token rotation does not discard unsynced household edits.
+          await Promise.all([
+            this.#directory.syncAuthorizationEpoch(user.authorizationEpoch),
+            this.#household?.syncAuthorizationEpoch(user.authorizationEpoch),
+          ]);
+          this.#patch((state) => ({ ...state, phase: "ready", user }));
+          return;
+        }
+        await this.#closeHousehold(true);
+        await this.#closeDirectory(true);
+        this.#patch((state) => ({ ...state, memberships: [], invitations: [], households: [],
+          currentHouseholdId: null, household: null, directory: null, user: null }));
+        if (user) await this.#openDirectory(user);
+        else this.#patch((state) => ({ ...state, phase: "signed_out" }));
+      }).catch(() => this.#patch((state) => ({ ...state, phase: "signed_out", user: null,
+        authError: "Local session cleanup failed. Close other tabs and reload." })));
+    };
+    window.addEventListener("storage", onSharedSession);
+    const removeConnectivity = this.#removeListeners;
+    this.#removeListeners = () => {
+      window.removeEventListener("storage", onSharedSession);
+      removeConnectivity?.();
     };
     // A provider or a magic link brings the browser back with a fragment;
     // finishing it is what turns this load into a signed-in one.
