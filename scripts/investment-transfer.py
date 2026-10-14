@@ -75,6 +75,8 @@ def successful(job):
 class Transfer:
  def __init__(self,args):
   self.args=args;self.root=Path(args.output).resolve();self.root.mkdir(parents=True,exist_ok=True,mode=0o700);self.root.chmod(0o700)
+  self.timeout=getattr(args,'timeout_seconds',7200)
+  if self.timeout<=0:raise ValueError('Timeout must be positive')
   config=json.loads(Path(args.config).read_text())
   self.flags=['--project',config['projectId'],'--env',args.environment,'--endpoint',config['endpoint'],'--profile',args.profile,'--json']
   self.state_path=self.root/'journal.json';self.state=json.loads(self.state_path.read_text()) if self.state_path.exists() else {}
@@ -85,7 +87,7 @@ class Transfer:
   log=self.root/(key+'.log')
   with log.open('w') as stderr:
    log.chmod(0o600)
-   try:result=subprocess.run(['node',self.args.cli,*args,*self.flags],stdout=subprocess.PIPE,stderr=stderr,text=True,timeout=310)
+   try:result=subprocess.run(['node',self.args.cli,*args,*self.flags],stdout=subprocess.PIPE,stderr=stderr,text=True,timeout=self.timeout+30)
    except subprocess.TimeoutExpired:result=None
   ids=re.findall(r'\bdjob_[A-Za-z0-9_-]+',log.read_text())
   if ids:self.state.setdefault(key,{})['jobId']=ids[0];atomic(self.state_path,self.state)
@@ -118,7 +120,11 @@ class Transfer:
   self.state[key]={**self.state.get(key,{}),'transport':'paged-explorer','snapshot':snapshot,'pages':pages,'count':count}
   atomic(self.state_path,self.state)
  def snapshot(self,names):
-  manifest={'scope':self.state['scope'],'collections':{}}
+  manifest_path=self.root/'manifest.json'
+  manifest=json.loads(manifest_path.read_text()) if manifest_path.exists() else {'scope':self.state['scope'],'collections':{}}
+  if manifest['scope']!=self.state['scope']:raise ValueError('Snapshot manifest belongs to another environment')
+  for name,entry in manifest['collections'].items():
+   if name not in names and sha(self.root/(name+'.jsonl'))!=entry['sha256']:raise ValueError('Sealed snapshot changed: '+name)
   for name in names:
    key='export-'+name;path=self.root/(name+'.jsonl');receipt=self.state.get(key,{})
    if receipt.get('sha256'):
@@ -135,7 +141,7 @@ class Transfer:
       for document in response['items']:
        if not document['deleted']:output.write(json.dumps(document['content'],separators=(',',':'),ensure_ascii=False)+'\n')
     else:
-     words=['data','export','--output',str(path),'--timeout','300']
+     words=['data','export','--output',str(path),'--timeout',str(self.timeout)]
      if receipt.get('jobId'):words+=['--job',receipt['jobId']]
      else:words+=['--collection',name]
      response=self.run(key,words);path.chmod(0o600)
@@ -184,7 +190,7 @@ class Transfer:
     if receipt.get('sha256',digest)!=digest:raise ValueError('Import input changed: '+key)
     if receipt.get('succeeded'):continue
     part.write_bytes(content);part.chmod(0o600)
-    words=['data','import','--timeout','300','--wait','--yes']
+    words=['data','import','--timeout',str(self.timeout),'--wait','--yes']
     if receipt.get('jobId'):words+=['--job',receipt['jobId']]
     else:words+=['--collection',name,'--input',str(part),'--strategy','create_only','--schema-version',str(2 if name=='robinlab_uploads' else 1)]
     self.state.setdefault(key,{})['sha256']=digest;atomic(self.state_path,self.state)
@@ -198,6 +204,7 @@ def main():
  parser.add_argument('action',choices=['snapshot','import'])
  for name in ['cli','environment','output','collections']:parser.add_argument('--'+name,required=True)
  parser.add_argument('--config',default='rational.config.json');parser.add_argument('--profile',default='robinlab');parser.add_argument('--snapshot');parser.add_argument('--existing-snapshot');parser.add_argument('--publish-head',action='store_true')
+ parser.add_argument('--timeout-seconds',type=int,default=7200,help='Per-command wait budget; resumes retain the existing cloud job ID')
  parser.add_argument('--paged-explorer-collections',default='',help='Stream bounded pages from one stable audited explorer snapshot')
  parser.add_argument('--explorer-collections',default='',help='Use one audited, byte-bounded explorer snapshot for these large-document collections')
  args=parser.parse_args();transfer=Transfer(args);names=args.collections.split(',')

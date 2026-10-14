@@ -10,10 +10,10 @@ def compare(source,destination,names):
   data=[]
   for root,manifest in zip([source,destination],manifests):
    entry=manifest['collections'][name];path=root/(name+'.jsonl')
-   if transfer.sha(path)!=entry['sha256']:raise ValueError('Unsealed snapshot: '+name)
-   rows=transfer.documents(path)
-   if len(rows)!=entry['count'] or transfer.logical_digest(rows)!=entry['logicalDigest']:raise ValueError('Snapshot manifest mismatch: '+name)
-   data.append(rows)
+   actual=transfer.snapshot_summary(path)
+   if actual['sha256']!=entry['sha256']:raise ValueError('Unsealed snapshot: '+name)
+   if actual['count']!=entry['count'] or actual['logicalDigest']!=entry['logicalDigest']:raise ValueError('Snapshot manifest mismatch: '+name)
+   data.append((actual['count'],actual['logicalDigest']))
   if data[0]!=data[1]:raise ValueError('Logical records differ: '+name)
   print('Exact logical parity',name)
 if __name__=='__main__':

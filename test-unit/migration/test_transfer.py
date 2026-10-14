@@ -35,13 +35,23 @@ class TransferTests(unittest.TestCase):
  def test_failed_records_are_not_success(self):
   with self.assertRaises(ValueError):m.successful({'state':'succeeded','progress':{'failed':1}})
  def test_timeout_retains_job_for_resume(self):
+  self.args.timeout_seconds=14400
   transfer=m.Transfer(self.args)
   def interrupted(*args, **kwargs):
+   self.assertEqual(kwargs['timeout'],14430)
    kwargs['stderr'].write('Created job djob_fixture01\n');kwargs['stderr'].flush()
    raise subprocess.TimeoutExpired('fixture',65)
   with patch.object(m.subprocess,'run',interrupted):
    with self.assertRaises(RuntimeError):transfer.run('import-test',[])
   self.assertEqual(m.Transfer(self.args).state['import-test']['jobId'],'djob_fixture01')
+ def test_subset_snapshot_preserves_other_sealed_collections(self):
+  self.args.explorer_collections='cache_status,latest_prices';transfer=m.Transfer(self.args)
+  with patch.object(transfer,'run',return_value={'items':[{'deleted':False,'content':{'id':'one'}}],'nextCursor':None}):
+   transfer.snapshot(['cache_status']);transfer.snapshot(['latest_prices'])
+  manifest=json.loads((transfer.root/'manifest.json').read_text())
+  self.assertEqual(set(manifest['collections']),{'cache_status','latest_prices'})
+  (transfer.root/'cache_status.jsonl').write_text('{"id":"changed"}\n')
+  with self.assertRaisesRegex(ValueError,'Sealed snapshot changed'):transfer.snapshot(['latest_prices'])
  def test_head_requires_explicit_publication_and_sealed_input(self):
   root=self.snapshot({'portfolio':{'id':'portfolio'}});transfer=m.Transfer(self.args)
   with self.assertRaisesRegex(ValueError,'publish-head'):transfer.import_snapshot(root,['portfolio_heads'])

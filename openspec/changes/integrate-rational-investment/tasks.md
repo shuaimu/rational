@@ -45,7 +45,7 @@
 
 ## 7. Cut over and verify autonomous operation
 
-- [ ] 7.1 Fence source investment mutation and automatic admission, drain/reconcile pending work, take a fresh protected source snapshot, and verify all source writer paths are inactive.
+- [x] 7.1 Fence source investment mutation and automatic admission, drain/reconcile pending work, take a fresh protected source snapshot, and verify all source writer paths are inactive.
 - [ ] 7.2 Import the verified final state into the destination, publish only after graph/data/report/replay checks pass, and prove the migration has not modified Rational household data or permissions.
 - [ ] 7.3 Activate the destination investment API and exactly one investment dispatcher, preserving independent Rational household schedules; verify stable hourly commands across the cutover boundary.
 - [ ] 7.4 Publish the combined Rational static artifact with both apps targeting the destination, then smoke-test both entry points from a fresh browser session with no local backend.

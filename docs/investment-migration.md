@@ -7,6 +7,22 @@ point fails before touching files or Git, including when given an explicit remot
 
 ## Current state
 
+The October 13 final source snapshot is complete: all 15 collections are sealed,
+including 82,524 saved-input records (6,615,522,833 bytes). All 35,595 captured
+artifacts, 462 historical portfolio roots, 249 accepted commands and nine
+native/Wasm financial comparisons passed verification. Mako Cloud PR #19 is
+merged and deployed; the installed CLI supports verified multipart download
+resumption and automatic developer-session renewal. The live interruption/resume
+exercise and complete export checksum/count checks passed.
+
+Source writer fences remain in place. Destination functions are read-only, its
+Investment schedule is paused and its head is unpublished. Final destination
+reconciliation and fresh parity, application activation, browser qualification
+and Pages publication remain pending. Private receipts are in
+`.local/integration/final-cutover-20261014/`.
+
+## Earlier staging and platform history
+
 On October 13, all 14 staged non-head collections passed exact logical comparison
 with the rehearsal source. The staged graph, 48 accepted commands, 60 retained
 historical roots, and 850 saved artifacts also passed verification; all nine
@@ -142,12 +158,26 @@ python3 scripts/investment-transfer.py import --cli "$MAKO_CLI" \
   --snapshot .local/integration/final-source --collections NON_HEAD_COLLECTIONS
 ```
 
-The current platform bulk importer has a 256 KiB internal request limit. Small
-rows are grouped into bounded batches. Import `robinlab_inputs` separately with
-`scripts/investment-large-import.mjs`, the destination config, an installed CLI entry point and a private journal
-directory. This uses short-lived audited explorer grants, verifies exact
-immutable collisions, and resumes with the same mutation IDs. Never pass
-credentials in arguments themselves.
+For missing immutable saved inputs, use `scripts/investment-bulk-inputs.mjs`
+with the sealed source, a fresh destination baseline, destination config,
+installed CLI entry point and private journal directory. It verifies every
+existing destination record is an exact source subset, then uses create-only
+cloud jobs with at most 32 MiB and 2,048 records per upload. The current cloud
+worker splits these into bounded internal batches that admit one-MiB documents.
+Completed payload files are retired; job identities and input digests remain
+journaled. A failed job may have committed rows: preserve its receipt and verify
+a fresh destination baseline before any replacement job. Never use the older
+whole-file `investment-large-import.mjs` for a multi-gigabyte snapshot.
+
+```sh
+node scripts/investment-bulk-inputs.mjs SOURCE DESTINATION_BASELINE \
+  rational.config.json "$MAKO_CLI" PRIVATE_JOURNAL
+```
+
+The snapshot tool accepts `--timeout-seconds 14400` for large collections and
+preserves other sealed collections when exporting a subset. Both snapshot
+comparison and capture reconciliation use disk indexes rather than retaining
+complete payloads in memory. Never pass credentials in command arguments.
 
 Large collection exports require Mako Cloud PR #19 (resumable multipart exports)
 and the updated installed `mako-cloud` CLI. The cloud saves bounded parts from one
