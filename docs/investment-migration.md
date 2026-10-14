@@ -20,17 +20,20 @@ are serialized across processes, preventing concurrent migration commands from
 consuming the same refresh cookie. Its eight CI checks passed, and interrupted
 commands resumed the original jobs and journals after installation.
 
-The October 14 reconciliation and fresh logical comparison passed for all 13
-non-head collections other than saved inputs. All 82,516 missing saved inputs
-were imported successfully in 215 parts with no reported row failures. The final
-cloud export continues independently; its local download/coordinator is stopped.
-The remaining comparison is running in the scheduled cloud verifier described below.
-Source writer fences remain in place.
-Destination functions are read-only, its Investment schedule is paused and its
-head is unpublished. Complete input equality verification and final graph/report parity,
-application activation, browser qualification and Pages publication remain
-pending. Private receipts are in
-`.local/integration/final-cutover-20261014/`.
+The October 14 final comparison passed for all 14 non-head collections. The
+complete destination cloud export contains all 82,524 saved inputs and has the
+same SHA-256, byte count and row count as the sealed, verified source export.
+The other 13 collections passed exact logical comparison. The temporary
+serverless row scan was stopped after preserving this complete export proof;
+its partial scan is not represented as a completed verification.
+
+The verified portfolio head is published with exact readback. Fresh checks found
+all six source writer functions closed, no active source write credentials, and
+unchanged household functions/schedules. Destination API/jobs remain read-only
+while the combined static site is published and checked in a real browser.
+Activation of the staged API/jobs and the single Investment dispatcher follows
+those checks. No local migration runtime or bulk download is required. Protected
+receipts are in `.local/integration/publish-20261014/`.
 
 The bounded input importer defaults to one job and optionally accepts
 `--concurrency 1..4`. A single journal owner keeps the same part boundaries and
@@ -158,7 +161,10 @@ destination matches the already verified source graph, captures, replay history
 and nine native/Wasm financial outputs. No local data-processing loop or native
 calculation process is needed. Keep the existing final export job; do not create a
 replacement just to watch its progress. Review the cloud checkpoint on return,
-then perform the existing publication and browser gates. Retire this temporary
+then perform the existing publication and browser gates. A completed cloud export
+with identical full-file SHA-256, byte count and row count is also a complete
+equality proof against the sealed source; preserve that receipt and stop the
+partial scan without changing its verified count. Retire this temporary
 schedule and its three credentials after preserving the final receipt.
 
 An empty destination namespace starts without source tombstones. Deleted source

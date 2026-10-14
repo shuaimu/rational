@@ -1,29 +1,24 @@
 # Rational Investment integration validation
 
-The integration branch combines both browser entry points and hosted application
-code in Rational. Production cutover is **not complete**. October 14 preflight
-verified all six source writer functions closed, the native worker disabled,
-zero active source write credentials, and all 784 source jobs quiescent. The
-destination API remains read-only, its dispatcher disabled, and its head
-unpublished. Final reconciliation is in progress.
+October 14 final data verification passed for all 14 non-head collections. The
+cloud-computed destination saved-input export has the same complete SHA-256,
+82,524 records and 6,615,522,833 bytes as the sealed source. The other 13
+collections match exactly. This complete export proof supersedes the partial
+scheduled row scan, without claiming that scan completed. The verified source's
+graph/history/captures and all nine native/Wasm report comparisons remain pinned.
 
-The complete final source snapshot passed graph/history/capture verification and
-all nine native/Wasm financial comparisons. Its saved inputs contain 82,524 records
-and 6,615,522,833 bytes; multipart export interruption/resumption and complete
-checksum verification passed after deployment of Mako Cloud PR #19.
+The final portfolio head is published and its exact readback passed. Six source
+writer functions remain closed, no source write credential is active, and
+household function versions/configurations and schedules are unchanged.
+Destination API/jobs remain read-only until the newly published static site
+passes the live portfolio browser checks. Full activation is still pending.
 
-Fresh destination exports cover all 15 collections. Provider history already
-matches the final source. Of 2,017 rehearsal input records, eight remain in the
-final source and 2,009 were retired by source cleanup; every destination input
-still exactly matches the sealed rehearsal. Revision-checked cleanup and bounded
-create-only imports reconcile these disjoint record sets. No head is published
-until a fresh complete destination comparison passes.
-
-October 14 validation also passed all 11 isolated real-Chrome auth/replication
-checks, Rational typecheck, hosted/frontend Investment tests, 19 Python migration
-tests and strict validation of all three OpenSpec changes. Existing owner sign-in
-works across both local application entry points. Live portfolio rendering and
-final Pages smoke tests still await publication of the verified head.
+The temporary serverless verifier passed 51 hosted function tests, including
+interrupted checkpoint recovery, overlapping invocations, transient failures,
+per-request audit identities, mismatch detection and bounded page resumption.
+All three OpenSpec changes pass strict validation. Earlier application builds,
+Rust tests and browser qualification are recorded below. No local migration
+worker or bulk download is running.
 
 Concurrent migration commands exposed a separate CLI refresh-cookie race. Mako
 Cloud PR #20 coordinates renewal and logout across processes, preserves concurrent
@@ -35,7 +30,7 @@ no cloud service redeployment.
 ## Completed checks
 
 - Combined static production build, Rational type checks and Investment lint.
-- 230 Rational unit tests, 40 hosted Investment function tests, 12 Investment
+- 230 Rational unit tests, 51 hosted Investment function tests, 12 Investment
   frontend tests, 19 migration-tool tests and 78 Rust workspace tests.
 - Nine local integration checks using the actual auth/RxDB/Dexie code.
 - Eleven isolated real-Chrome checks, including concurrent token refresh under Web

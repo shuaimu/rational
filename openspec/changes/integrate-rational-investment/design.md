@@ -91,6 +91,12 @@ recomputing the multi-gigabyte snapshot locally. Pin prior evidence and the sour
 head in the private verification plan. Final head publication, browser checks,
 function promotion, and Pages publication retain their existing gates. Retire the
 temporary schedule and scoped credentials after verifying its completed receipt.
+A completed cloud export with identical whole-artifact SHA-256, byte count and
+row count to the sealed source also proves complete input equality. Preserve the
+export receipt and the partial scan checkpoint separately; never mark an
+incomplete scan as fully compared. For a cloud-only cutover, publish the static
+site with destination writes still disabled, perform the live browser checks,
+then activate the existing staged writers and one dispatcher.
 
 ## Risks / Trade-offs
 
