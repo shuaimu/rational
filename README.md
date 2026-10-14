@@ -72,6 +72,13 @@ cross-origin request only from an origin the environment lists:
 mako allowed-origins set --origin https://shuaimu.github.io
 ```
 
+Google sign-in also requires an exact return URL in the environment's auth
+settings, including its path and trailing slash. For the local Pages-layout
+preview, register `http://localhost:5173/rational/`; allowing
+`http://localhost:5173/` alone does not cover it. Preserve the production return
+URL (`https://shuaimu.github.io/rational/`) and existing provider settings when
+adding a development URL with `mako-cloud auth-settings get` and `set`.
+
 Create the project, its collections, policies, indexes, and bucket, and deploy
 the `households` function with:
 

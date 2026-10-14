@@ -46,6 +46,12 @@ actually enforced by the deployment, removing misleading reports of the old
 request-rate checkpoint. Service/proxy configuration and retained backup state
 were preserved across the deployment.
 
+The local Pages-layout preview's exact Google return URL,
+`http://localhost:5173/rational/`, is now registered alongside the existing
+production and development URLs. Provider settings are unchanged. Real-browser
+Google sign-in and navigation from Rational into Investment passed without a
+second sign-in; portfolio visibility still waits for final verified publication.
+
 ## Earlier staging and platform history
 
 On October 13, all 14 staged non-head collections passed exact logical comparison
