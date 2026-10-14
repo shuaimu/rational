@@ -25,12 +25,19 @@ tests and strict validation of all three OpenSpec changes. Existing owner sign-i
 works across both local application entry points. Live portfolio rendering and
 final Pages smoke tests still await publication of the verified head.
 
+Concurrent migration commands exposed a separate CLI refresh-cookie race. Mako
+Cloud PR #20 coordinates renewal and logout across processes, preserves concurrent
+profile updates, and rejects a changed endpoint in a long-lived client. All eight
+CI checks passed; the merged CLI is installed, and interrupted migration commands
+resumed their existing jobs and receipts without another sign-in. This required
+no cloud service redeployment.
+
 ## Completed checks
 
 - Combined static production build, Rational type checks and Investment lint.
-- 224 Rational unit tests, 40 hosted Investment function tests, 12 Investment
-  frontend tests, 13 migration-tool tests and 78 Rust workspace tests.
-- Seven local integration checks using the actual auth/RxDB/Dexie code.
+- 230 Rational unit tests, 40 hosted Investment function tests, 12 Investment
+  frontend tests, 19 migration-tool tests and 78 Rust workspace tests.
+- Nine local integration checks using the actual auth/RxDB/Dexie code.
 - Eleven isolated real-Chrome checks, including concurrent token refresh under Web
   Locks, offline reopen, incomplete graph handling, authorization reset, logout,
   and denial of unrelated users without signing them out of Rational.

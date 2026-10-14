@@ -15,6 +15,11 @@ merged and deployed; the installed CLI supports verified multipart download
 resumption and automatic developer-session renewal. The live interruption/resume
 exercise and complete export checksum/count checks passed.
 
+The installed CLI also includes Mako Cloud PR #20. Renewal and profile updates
+are serialized across processes, preventing concurrent migration commands from
+consuming the same refresh cookie. Its eight CI checks passed, and interrupted
+commands resumed the original jobs and journals after installation.
+
 Source writer fences remain in place. Destination functions are read-only, its
 Investment schedule is paused and its head is unpublished. Final destination
 reconciliation and fresh parity, application activation, browser qualification
