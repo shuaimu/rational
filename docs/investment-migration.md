@@ -29,6 +29,13 @@ application activation, browser qualification and Pages publication remain
 pending. Private receipts are in
 `.local/integration/final-cutover-20261014/`.
 
+The bounded input importer defaults to one job and optionally accepts
+`--concurrency 1..4`. A single journal owner keeps the same part boundaries and
+job IDs, uses separate payload files for disjoint parts, stops new admission on
+failure, and drains admitted jobs before releasing its lock. Resume the same
+journal after an interruption; never replace a recorded job merely because its
+response was lost. Complete destination parity is required at every concurrency.
+
 Two additional platform fixes are merged and deployed. Mako Cloud PR #22 aligns
 the public proxy's exact data-job artifact PUT route with the API's 512 MiB bound;
 its former 32 MB ceiling rejected a valid 32 MiB import chunk. The original job

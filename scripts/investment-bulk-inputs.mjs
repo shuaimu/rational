@@ -38,7 +38,8 @@ export async function* inputParts(source,ids,maxBytes=32*1024*1024,maxRows=2048)
  if(buffers.length)yield {index,rows:buffers.length,bytes,content:Buffer.concat(buffers,bytes)};
 }
 
-export async function importInputs({source,baseline,configFile,cliPath,output,rehearsal}){
+export async function importInputs({source,baseline,configFile,cliPath,output,rehearsal,concurrency=1}){
+ assert.ok(Number.isInteger(concurrency)&&concurrency>=1&&concurrency<=4,'concurrency must be 1..4');
  const [a,b,config]=await Promise.all([source,baseline,configFile].map((path,i)=>readFile(i<2?resolve(path,'manifest.json'):path,'utf8').then(JSON.parse)));
  assert.equal(a.scope.project,config.projectId);assert.equal(a.scope.endpoint,config.endpoint);assert.notEqual(a.scope.environment,config.environmentId);
  assert.deepEqual(b.scope,{environment:config.environmentId,project:config.projectId,endpoint:config.endpoint});
@@ -60,11 +61,11 @@ export async function importInputs({source,baseline,configFile,cliPath,output,re
   const save=()=>{writeFileSync(path+'.tmp',JSON.stringify(state,null,2)+'\n',{mode:0o600});renameSync(path+'.tmp',path);};save();
   console.log('Missing immutable input records',ids.length);
   let completed=0;
-  for await(const part of inputParts(desired,ids)){
+  const processPart=async part=>{
    const digest=hash(part.content),key=String(part.index);let receipt=state.parts[key];
    if(receipt){assert.equal(receipt.sha256,digest);assert.equal(receipt.rows,part.rows);assert.equal(receipt.bytes,part.bytes);}else{receipt=state.parts[key]={sha256:digest,rows:part.rows,bytes:part.bytes};save();}
    if(!receipt.succeeded){
-    const file=resolve(root,'active-part.jsonl'),log=resolve(root,'part-'+key+'.log');await writeFile(file,part.content,{mode:0o600});
+    const file=resolve(root,'active-part-'+key+'.jsonl'),log=resolve(root,'part-'+key+'.log');await writeFile(file,part.content,{mode:0o600});
     const words=['data','import','--input',file,'--schema-version','1','--yes','--wait','--timeout','7200',...(receipt.jobId?['--job',receipt.jobId]:['--collection','robinlab_inputs','--strategy','create_only']),'--project',config.projectId,'--env',config.environmentId,'--endpoint',config.endpoint,'--profile','robinlab','--json'];
     const result=await new Promise((resolveResult,reject)=>{
      const child=spawn(process.execPath,[cliPath,...words],{stdio:['ignore','pipe','pipe']});let stdout='',tail='';
@@ -79,12 +80,31 @@ export async function importInputs({source,baseline,configFile,cliPath,output,re
     receipt.succeeded=true;receipt.verifiedAt=new Date().toISOString();save();await unlink(file);
    }
    completed+=part.rows;console.log('Imported missing inputs',completed,'/',ids.length,'part',part.index);
-  }
+  };
+  // A single journal owner admits disjoint immutable parts. Stop admission on
+  // any error, then drain every admitted CLI so successful receipts are durable
+  // before releasing the journal lock or allowing another invocation to resume.
+  const pending=new Set();let failure;
+  try{
+   for await(const part of inputParts(desired,ids)){
+    while(pending.size>=concurrency)await Promise.race(pending);
+    if(failure)break;
+    const work=processPart(part).catch(error=>{failure??=error;}).finally(()=>pending.delete(work));
+    pending.add(work);
+   }
+  }catch(error){failure??=error;}
+  await Promise.all(pending);
+  if(failure)throw failure;
+  // A payload left by the older serial importer is derived from the sealed
+  // source; retire it only after every part has a verified success receipt.
+  await unlink(resolve(root,'active-part.jsonl')).catch(error=>{if(error.code!=='ENOENT')throw error;});
   state.complete=true;state.completedAt=new Date().toISOString();save();return {created:completed,baseline:old.size,total:desired.size};
  }finally{await desired?.close();await old?.close();await previous?.close();await unlink(lock);}
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
- const [source,baseline,configFile,cliPath,output,rehearsal]=process.argv.slice(2);assert.ok(output,'Usage: SOURCE BASELINE CONFIG INSTALLED_CLI_ENTRY PRIVATE_JOURNAL [VERIFIED_REHEARSAL]');
- console.log(JSON.stringify(await importInputs({source,baseline,configFile,cliPath,output,rehearsal})));
+ const args=process.argv.slice(2),flag=args.indexOf('--concurrency');let concurrency=1;
+ if(flag>=0){concurrency=Number(args[flag+1]);args.splice(flag,2);}
+ const [source,baseline,configFile,cliPath,output,rehearsal]=args;assert.ok(output&&args.length<=6,'Usage: SOURCE BASELINE CONFIG INSTALLED_CLI_ENTRY PRIVATE_JOURNAL [VERIFIED_REHEARSAL] [--concurrency 1..4]');
+ console.log(JSON.stringify(await importInputs({source,baseline,configFile,cliPath,output,rehearsal,concurrency})));
 }
