@@ -11,6 +11,10 @@ test('bulk input planning refuses changed or extra destination rows and bounds U
  assert.deepEqual(await missingIds(source,new Map([['b',{id:'b'}]])),['a','c']);
  await assert.rejects(()=>missingIds(source,new Map([['a',{id:'a',payload:'other'}]])),/exact immutable subset/);
  await assert.rejects(()=>missingIds(source,new Map([['z',{id:'z'}]])),/exact immutable subset/);
+ const stale=new Map([['z',{id:'z',payload:'rehearsal'}]]);
+ assert.deepEqual(await missingIds(source,stale,stale),['a','b','c']);
+ await assert.rejects(()=>missingIds(source,stale,new Map([['z',{id:'z',payload:'unexplained'}]])),/verified rehearsal/);
+ await assert.rejects(()=>missingIds(source,new Map([['a',{id:'a',payload:'other'}]]),new Map([['a',{id:'a',payload:'other'}]])),/exact immutable subset/);
  const parts=[];for await(const part of inputParts(source,['a','b','c'],64,2))parts.push(part);
  assert.ok(parts.length>1);assert.ok(parts.every(p=>p.bytes<=64&&p.rows<=2));
  assert.deepEqual(parts.flatMap(p=>p.content.toString().trim().split('\n').map(JSON.parse)),[...source.values()]);

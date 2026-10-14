@@ -169,6 +169,16 @@ journaled. A failed job may have committed rows: preserve its receipt and verify
 a fresh destination baseline before any replacement job. Never use the older
 whole-file `investment-large-import.mjs` for a multi-gigabyte snapshot.
 
+If final source cleanup retired records present in the rehearsal, pass that sealed
+destination rehearsal as the optional sixth argument. Every extra baseline row
+must match the rehearsal exactly; every row shared with the final source must
+still match the final source. The bulk importer only creates missing source IDs.
+Separately reconcile the obsolete destination rows with `--existing-only --apply`;
+this uses revision-checked deletes and leaves missing rows for bulk admission.
+Both operations must finish and pass a fresh complete export comparison before
+publishing the head. An unexplained extra or changed immutable row still stops
+the transfer.
+
 ```sh
 node scripts/investment-bulk-inputs.mjs SOURCE DESTINATION_BASELINE \
   rational.config.json "$MAKO_CLI" PRIVATE_JOURNAL

@@ -11,9 +11,15 @@ import {snapshotIndex} from './investment-snapshot.mjs';
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const canonical=value=>JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
 
-export async function missingIds(source,baseline){
+export async function missingIds(source,baseline,rehearsal){
  const existing=new Set(baseline.keys());
- for(const id of existing)assert.equal(canonical(await source.get(id)),canonical(await baseline.get(id)),'destination baseline is not an exact immutable subset');
+ for(const id of existing){
+  const desired=await source.get(id),current=await baseline.get(id);
+  // Frozen-source cleanup can retire earlier rehearsal captures. They are
+  // reconciled separately by revision; bulk admission never targets those IDs.
+  const expected=desired??(rehearsal?await rehearsal.get(id):undefined);
+  assert.ok(expected&&canonical(expected)===canonical(current),'destination baseline is not an exact immutable subset or verified rehearsal record');
+ }
  return [...source.keys()].filter(id=>!existing.has(id)).sort();
 }
 
@@ -32,7 +38,7 @@ export async function* inputParts(source,ids,maxBytes=32*1024*1024,maxRows=2048)
  if(buffers.length)yield {index,rows:buffers.length,bytes,content:Buffer.concat(buffers,bytes)};
 }
 
-export async function importInputs({source,baseline,configFile,cliPath,output}){
+export async function importInputs({source,baseline,configFile,cliPath,output,rehearsal}){
  const [a,b,config]=await Promise.all([source,baseline,configFile].map((path,i)=>readFile(i<2?resolve(path,'manifest.json'):path,'utf8').then(JSON.parse)));
  assert.equal(a.scope.project,config.projectId);assert.equal(a.scope.endpoint,config.endpoint);assert.notEqual(a.scope.environment,config.environmentId);
  assert.deepEqual(b.scope,{environment:config.environmentId,project:config.projectId,endpoint:config.endpoint});
@@ -40,12 +46,15 @@ export async function importInputs({source,baseline,configFile,cliPath,output}){
  const lock=resolve(root,'owner.lock');
  try{const pid=Number(await readFile(lock,'utf8'));assert.ok(Number.isInteger(pid)&&pid>0);try{process.kill(pid,0);throw Error('Import journal already has an active owner');}catch(error){if(error.code!=='ESRCH')throw error;}await unlink(lock);}catch(error){if(error.code!=='ENOENT')throw error;}
  const owned=await open(lock,'wx',0o600);await owned.writeFile(String(process.pid));await owned.close();
- let desired,old;
+ let desired,old,previous;
  try{
   desired=await snapshotIndex(resolve(source,'robinlab_inputs.jsonl'),a.collections.robinlab_inputs);
   old=await snapshotIndex(resolve(baseline,'robinlab_inputs.jsonl'),b.collections.robinlab_inputs);
-  const ids=await missingIds(desired,old);
+  let rehearsalManifest;
+  if(rehearsal){rehearsalManifest=JSON.parse(await readFile(resolve(rehearsal,'manifest.json'),'utf8'));assert.deepEqual(rehearsalManifest.scope,b.scope);previous=await snapshotIndex(resolve(rehearsal,'robinlab_inputs.jsonl'),rehearsalManifest.collections.robinlab_inputs);}
+  const ids=await missingIds(desired,old,previous);
   const scope={source:hash(canonical(a)),baseline:hash(canonical(b)),endpoint:config.endpoint,project:config.projectId,environment:config.environmentId,collection:'robinlab_inputs',format:1};
+  if(rehearsalManifest)scope.rehearsal=hash(canonical(rehearsalManifest));
   const path=resolve(root,'import.json');let state;
   try{state=JSON.parse(await readFile(path,'utf8'));assert.deepEqual(state.scope,scope);}catch(error){if(error.code!=='ENOENT')throw error;state={scope,missing:ids.length,parts:{}};}
   const save=()=>{writeFileSync(path+'.tmp',JSON.stringify(state,null,2)+'\n',{mode:0o600});renameSync(path+'.tmp',path);};save();
@@ -72,10 +81,10 @@ export async function importInputs({source,baseline,configFile,cliPath,output}){
    completed+=part.rows;console.log('Imported missing inputs',completed,'/',ids.length,'part',part.index);
   }
   state.complete=true;state.completedAt=new Date().toISOString();save();return {created:completed,baseline:old.size,total:desired.size};
- }finally{await desired?.close();await old?.close();await unlink(lock);}
+ }finally{await desired?.close();await old?.close();await previous?.close();await unlink(lock);}
 }
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
- const [source,baseline,configFile,cliPath,output]=process.argv.slice(2);assert.ok(output,'Usage: SOURCE BASELINE CONFIG INSTALLED_CLI_ENTRY PRIVATE_JOURNAL');
- console.log(JSON.stringify(await importInputs({source,baseline,configFile,cliPath,output})));
+ const [source,baseline,configFile,cliPath,output,rehearsal]=process.argv.slice(2);assert.ok(output,'Usage: SOURCE BASELINE CONFIG INSTALLED_CLI_ENTRY PRIVATE_JOURNAL [VERIFIED_REHEARSAL]');
+ console.log(JSON.stringify(await importInputs({source,baseline,configFile,cliPath,output,rehearsal})));
 }

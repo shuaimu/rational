@@ -10,7 +10,8 @@ export function auditedDocuments({cliPath,config,profile='robinlab',root,collect
   let words,input;
   if(method==='POST'){
    input=resolve(root,body.mutationId+'.json');
-   await writeFile(input,JSON.stringify({kind:body.operation,documentId:id,schemaVersion:body.schemaVersion,expectedRevision:body.expectedRevision,idempotencyKey:body.mutationId,content:body.operation==='delete'?null:body.body}),{mode:0o600});
+   // Explorer validates deletes against the existing schema-valid body too.
+   await writeFile(input,JSON.stringify({kind:body.operation,documentId:id,schemaVersion:body.schemaVersion,expectedRevision:body.expectedRevision,idempotencyKey:body.mutationId,content:body.body}),{mode:0o600});
    words=['explorer','mutate',collection,'--mutation','@'+input,'--yes'];
   }else words=['explorer','get',collection,id];
   for(let attempt=0;attempt<8;attempt++){

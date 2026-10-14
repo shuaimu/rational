@@ -14,7 +14,7 @@ export async function reconcileExact({request,id,before,after,schemaVersion,muta
   const current=await request('GET',id),value=current&&!current._deleted?current.body:null;
   if(canonical(value)===canonical(after))return;
   assert.equal(canonical(value),canonical(before),'destination changed after staging baseline');
-  const result=await request('POST',id,{operation:after===null?'delete':current?'update':'create',mutationId:mutationId+'_'+attempt,expectedRevision:current?.revision??null,schemaVersion,body:after??{id}});
+  const result=await request('POST',id,{operation:after===null?'delete':current?'update':'create',mutationId:mutationId+'_'+attempt,expectedRevision:current?.revision??null,schemaVersion,body:after??value});
   if(['applied','replayed'].includes(result.status))return;
   assert.equal(result.status,'conflict');
  }throw Error('Concurrent destination mutation; migration stopped');
@@ -38,7 +38,9 @@ async function main(){
   const desired=await rows(source,name,a);let old;
   try{
   old=await rows(baseline,name,b);const changes=[];
-  for(const id of new Set([...desired.keys(),...old.keys()])){
+  // Retire stale rehearsal rows before create-only bulk admission. Missing rows
+  // are deliberately left for the bounded importer and fresh baseline export.
+  for(const id of flags.includes('--existing-only')?old.keys():new Set([...desired.keys(),...old.keys()])){
    if(canonical(await desired.get(id)??null)!==canonical(await old.get(id)??null))changes.push(id);
   }
   console.log(name,changes.length,'changes',flags.includes('--apply')?'applying':'planned');

@@ -1,10 +1,29 @@
 # Rational Investment integration validation
 
 The integration branch combines both browser entry points and hosted application
-code in Rational. Production cutover is **not complete**. At the last authenticated
-inspection on October 12, the source remained authoritative; the destination API
-was read-only, its dispatcher disabled, and its portfolio head unpublished. These
-live facts require rechecking before cutover.
+code in Rational. Production cutover is **not complete**. October 14 preflight
+verified all six source writer functions closed, the native worker disabled,
+zero active source write credentials, and all 784 source jobs quiescent. The
+destination API remains read-only, its dispatcher disabled, and its head
+unpublished. Final reconciliation is in progress.
+
+The complete final source snapshot passed graph/history/capture verification and
+all nine native/Wasm financial comparisons. Its saved inputs contain 82,524 records
+and 6,615,522,833 bytes; multipart export interruption/resumption and complete
+checksum verification passed after deployment of Mako Cloud PR #19.
+
+Fresh destination exports cover all 15 collections. Provider history already
+matches the final source. Of 2,017 rehearsal input records, eight remain in the
+final source and 2,009 were retired by source cleanup; every destination input
+still exactly matches the sealed rehearsal. Revision-checked cleanup and bounded
+create-only imports reconcile these disjoint record sets. No head is published
+until a fresh complete destination comparison passes.
+
+October 14 validation also passed all 11 isolated real-Chrome auth/replication
+checks, Rational typecheck, hosted/frontend Investment tests, 19 Python migration
+tests and strict validation of all three OpenSpec changes. Existing owner sign-in
+works across both local application entry points. Live portfolio rendering and
+final Pages smoke tests still await publication of the verified head.
 
 ## Completed checks
 
@@ -12,7 +31,7 @@ live facts require rechecking before cutover.
 - 224 Rational unit tests, 40 hosted Investment function tests, 12 Investment
   frontend tests, 13 migration-tool tests and 78 Rust workspace tests.
 - Seven local integration checks using the actual auth/RxDB/Dexie code.
-- Nine isolated real-Chrome checks, including concurrent token refresh under Web
+- Eleven isolated real-Chrome checks, including concurrent token refresh under Web
   Locks, offline reopen, incomplete graph handling, authorization reset, logout,
   and denial of unrelated users without signing them out of Rational.
 - Live Google sign-in, shared authentication across both entry points, cross-tab
