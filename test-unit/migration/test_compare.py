@@ -26,6 +26,10 @@ class CompareTests(unittest.TestCase):
  def test_equal_counts_with_different_content_are_rejected(self):
   a=self.snapshot('a',[{'id':'one','value':1}]);b=self.snapshot('b',[{'id':'one','value':2}])
   with self.assertRaisesRegex(ValueError,'Logical records differ'):m.compare(a,b,['portfolio_commands'])
+ def test_equal_json_numbers_keep_existing_comparison_semantics(self):
+  a=self.snapshot('a',[{'id':'one','value':1},{'id':'two','value':2}])
+  b=self.snapshot('b',[{'id':'two','value':2.0},{'id':'one','value':1.0}])
+  m.compare(a,b,['portfolio_commands'])
  def test_unsealed_input_cannot_claim_parity(self):
   a=self.snapshot('a',[{'id':'one'}]);b=self.snapshot('b',[{'id':'one'}])
   (b/'portfolio_commands.jsonl').write_text('{"id":"changed"}\n')
