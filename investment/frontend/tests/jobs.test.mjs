@@ -106,3 +106,14 @@ test('discovery preserves commands admitted or changed while a scan was in fligh
  jobs.recoverJobs();jobs.trackJob(queued,command);jobs.trackJob({...queued,id:'j_'+'d'.repeat(64)});
  release({jobs:[],cursor:null});await new Promise(resolve=>setImmediate(resolve));assert.equal(jobs.getJobs().length,2);
 });
+
+test('saved counts remain unverified until discovery succeeds and failure exposes retry',async()=>{
+ setup();const jobs=await load();jobs.trackJob(queued);let fail=true,release;
+ jobs.configureJobs({list:()=>fail?Promise.reject(Error('offline')):new Promise(resolve=>{release=resolve;}),get:async()=>queued,cancel:async()=>queued,complete:()=>{}});
+ assert.equal(jobs.getJobDiscoveryState(),'checking');
+ jobs.recoverJobs();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(jobs.getJobDiscoveryState(),'unavailable');assert.equal(jobs.getJobs().length,1);
+ fail=false;jobs.recoverJobs(true);assert.equal(jobs.getJobDiscoveryState(),'checking');
+ release({jobs:[],cursor:null});await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(jobs.getJobDiscoveryState(),'current');assert.equal(jobs.getJobs().length,0);
+});

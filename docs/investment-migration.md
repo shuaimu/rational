@@ -35,7 +35,7 @@ unchanged household functions/schedules. The combined site is published at
 transactions, positions and performance; shared sign-in and deep-link reloads
 passed. The reviewed browser Wasm bundle is tracked for clean CI builds.
 
-Destination API/jobs versions 6/5 are active, with exactly one Investment
+Destination API/jobs versions 7/5 are active, with exactly one Investment
 dispatcher running hourly (`0 * * * *`, UTC). Automatic brokerage and price
 refresh admission is daily, with shared UTC-day identities for API and scheduled
 quotes. Previously accepted hourly jobs retain their identities and checkpoints.
@@ -408,3 +408,12 @@ The frontend now removes stale cloud-only queued records after a successful full
 pending scan and explicitly shows queued/running/waiting counts. Local commands,
 replication waits and entries from failed/partial discovery remain recoverable.
 This fixes the backlog count; it does not claim that pending imports have completed.
+
+### Queue freshness follow-up
+
+A page reload could initially show its saved 345-entry list while the old API
+scanned all 794 historical job records before reconciling. API version 7 uses
+an additive state/id index to read pending states directly, including review
+states. Browser saved counts are now explicitly labelled until a successful
+refresh, and failed refreshes expose a retry control. The 339-job cancellation
+is unchanged; this follow-up changes only how the current queue is read/shown.

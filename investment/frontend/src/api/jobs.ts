@@ -22,6 +22,8 @@ const listeners = new Set<() => void>();
 const inflight = new Map<string, Promise<CloudJob>>();
 let transport: { list: (cursor: string | null) => Promise<{ jobs: CloudJob[]; cursor: string | null }>; get: (id: string) => Promise<CloudJob>; cancel: (id: string) => Promise<CloudJob>; complete: (command: JobCommand) => void };
 let discovery: Promise<void> | null = null;
+let discoveryState: 'checking' | 'current' | 'unavailable' = 'checking';
+export const getJobDiscoveryState = () => discoveryState;
 let nextDiscovery = 0;
 const recoveryOrder = new Map<string, number>();
 const nextRecovery = new Map<string, number>();
@@ -35,6 +37,7 @@ function emit() { for (const listener of listeners) listener(); }
 function openScope(scope: string) {
   if (currentScope === scope) return;
   currentScope = scope;
+  discoveryState = 'checking';
   try { snapshot = JSON.parse(localStorage.getItem(key(scope)) ?? '[]') as TrackedJob[]; }
   catch { snapshot = []; }
   snapshot = snapshot.filter(job => job.scope === scope && /^j_[a-f0-9]{64}$/.test(job.id));
@@ -93,11 +96,12 @@ export function dismissJob(id: string) {
   if (job.command) transport.complete(job.command);
   snapshot = snapshot.filter(row => row.id !== id); recoveryOrder.delete(id); nextRecovery.delete(id); persist();
 }
-export function recoverJobs() {
+export function recoverJobs(force = false) {
   let scope: string; try { scope = requireOwnerScope(); } catch { return; }
   openScope(scope);
-  if (!discovery && Date.now() >= nextDiscovery) {
+  if (!discovery && (force || Date.now() >= nextDiscovery)) {
     nextDiscovery = Date.now() + 300_000;
+    discoveryState = 'checking'; emit();
     discovery = (async () => {
       const before = new Map(snapshot.map(job => [job.id, job]));
       const seen = new Set<string>();
@@ -116,8 +120,12 @@ export function recoverJobs() {
       // still needs replication, or infer cancellation from a failed partial scan.
       snapshot = snapshot.filter(job => seen.has(job.id) || before.get(job.id) !== job ||
         job.state !== 'queued' || job.command || job.waitingForSync);
+      discoveryState = 'current';
       persist();
-    })().catch(() => { /* Retry discovery after reconnect; known jobs remain. */ }).finally(() => { discovery = null; });
+    })().catch(() => {
+      if (currentScope !== scope) return;
+      discoveryState = 'unavailable'; nextDiscovery = Date.now() + 60_000; emit();
+    }).finally(() => { discovery = null; });
   }
   // Five-minute discovery refreshes queued background work in pages. Poll only active work
   // and this device's commands individually; a migrated backlog must not create
@@ -134,5 +142,5 @@ export function recoverJobs() {
 }
 onClearProtectedState(async nextScope => {
   for (const name of Object.keys(localStorage)) if (name.startsWith(prefix) && name !== (nextScope ? key(nextScope) : '')) localStorage.removeItem(name);
-  currentScope = ''; snapshot = []; nextDiscovery = 0; recoveryOrder.clear(); nextRecovery.clear(); recoverySequence = 0; emit();
+  currentScope = ''; snapshot = []; discoveryState = 'checking'; nextDiscovery = 0; recoveryOrder.clear(); nextRecovery.clear(); recoverySequence = 0; emit();
 });

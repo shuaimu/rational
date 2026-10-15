@@ -163,3 +163,12 @@ removed if they have no local command and have not changed during the scan. Loca
 manual command receipts remain tracked until their terminal outcome is recovered.
 Failed/partial discovery never removes entries. The operations panel explicitly
 summarizes queued and active states. Daily admission and hourly dispatch remain.
+
+### Queue refresh follow-up
+
+The user's refreshed page restored 345 cached entries until a 25-page scan of all
+794 historical jobs finished. Add a state/id index and query only queued, running,
+retry, committing and needs-attention rows. A composite cursor preserves bounded
+paging across states; legacy cursors remain readable during deployment. Show
+saved counts explicitly while checking or unavailable, and offer a retry after
+failed discovery. Never present restored counts as freshly verified cloud state.

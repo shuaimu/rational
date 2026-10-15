@@ -84,3 +84,28 @@ test('new-device recovery pages accepted jobs without private inputs or complete
  assert.equal(a.jobs.length+b.jobs.length,35);assert.equal(b.cursor,null);
  assert.ok([...a.jobs,...b.jobs].every(job=>!('input' in job)&&!('commandId' in job)&&job.id!==cancelled.body.id));
 });
+
+test('pending discovery queries only pending states and includes needs-attention',async()=>{
+ const {fixture}=await import('./fixtures.mjs');const f=await fixture(),queries=[];
+ const jobs=new JobStore(()=>({...f.documents('robinlab_jobs'),query:async q=>{queries.push(q);return f.documents('robinlab_jobs').query(q);}}),{clock:()=>1000});
+ for(let i=0;i<90;i++){const job=await jobs.admit('historical_cancel_'+String(i).padStart(4,'0'),'excel',{});await jobs.cancel(job.body.id);}
+ const queued=await jobs.admit('current_queue_job_001','excel',{});
+ const review=await jobs.admit('requires_review_job_01','register',{});
+ const claim=await jobs.claim(review.body.id,'pending_test_worker01');await jobs.checkpoint(claim,{phase:'uncertain'},{state:'needs-attention'});
+ const page=await jobs.pendingPage();assert.equal(page.cursor,null);
+ assert.deepEqual(new Set(page.jobs.map(j=>j.id)),new Set([queued.body.id,review.body.id]));
+ assert.equal(queries.length,5);assert.ok(queries.every(q=>q.predicates.some(p=>p.field==='state'&&p.operator==='eq'&&!['completed','failed','cancelled'].includes(p.value))));
+ await assert.rejects(()=>jobs.pendingPage('pending1:broken'),e=>e.status===400);
+ await assert.rejects(()=>jobs.pendingPage('pending1:[]'),e=>e.status===400);
+});
+test('state cursors paginate independently without repeating exhausted states',async()=>{
+ const {fixture}=await import('./fixtures.mjs');const f=await fixture(),jobs=new JobStore(()=>f.documents('robinlab_jobs'),{clock:()=>1000});
+ for(let i=0;i<35;i++){
+  await jobs.admit('multi_queued_'+String(i).padStart(5,'0'),'excel',{});
+  const review=await jobs.admit('multi_review_'+String(i).padStart(5,'0'),'register',{});
+  const claim=await jobs.claim(review.body.id,'pending_test_worker01');await jobs.checkpoint(claim,{}, {state:'needs-attention'});
+ }
+ const first=await jobs.pendingPage(),second=await jobs.pendingPage(first.cursor);
+ assert.equal(first.jobs.length,64);assert.equal(second.jobs.length,6);assert.equal(second.cursor,null);
+ assert.equal(new Set([...first.jobs,...second.jobs].map(j=>j.id)).size,70);
+});

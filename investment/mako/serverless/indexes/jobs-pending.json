@@ -1,0 +1,16 @@
+{
+  "collectionId": "robinlab_jobs",
+  "name": "by_state_id",
+  "version": 1,
+  "kind": "non_unique",
+  "fields": [
+    {
+      "path": "state",
+      "direction": "ascending"
+    },
+    {
+      "path": "id",
+      "direction": "ascending"
+    }
+  ]
+}

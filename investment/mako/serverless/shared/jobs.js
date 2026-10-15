@@ -1,7 +1,8 @@
-import {ensure,ApiError,sha256} from './errors.js';
+import {ensure,ApiError,sha256,batches} from './errors.js';
 const encoder=new TextEncoder();
 const terminal=new Set(['completed','failed','cancelled','needs-attention']);
 const kinds=new Set(['excel','snaptrade','register','prefetch','cache-clear','summary','portfolio-command']);
+const pendingStates=['queued','running','retry','committing','needs-attention'];
 export const LEASE_MILLISECONDS=60000;
 export const ARTIFACT_RETENTION_MILLISECONDS=7*86400000;
 // Stable admission is separate from a worker claim. The row's revision and
@@ -63,8 +64,20 @@ export class JobStore {
  status(row) {const b=row.body;return {id:b.id,kind:b.kind,state:b.state,attempt:b.attempt,createdAt:b.createdAt,updatedAt:b.updatedAt,retryAt:['retry','committing'].includes(b.state)?b.dueAt:null,cancelRequested:b.cancelRequested,result:b.state==='completed'?b.result:null,error:b.error};}
  async pendingPage(cursor=null) {
   ensure(cursor===null||typeof cursor==='string'&&cursor.length<=8192,400,'Invalid job cursor');
-  const page=await this.documents().query({predicates:[{field:'dueAt',operator:'gte',value:0}],sort:[{field:'dueAt',direction:'asc'},{field:'id',direction:'asc'}],limit:32,cursor});
-  return {jobs:page.documents.filter(row=>!row._deleted&&!['completed','failed','cancelled'].includes(row.body.state)).map(row=>this.status(row)),cursor:page.nextCursor??null};
+  // Finish scans started by older clients without invalidating their cursor.
+  if(cursor!==null&&!cursor.startsWith('pending1:')){
+   const page=await this.documents().query({predicates:[{field:'dueAt',operator:'gte',value:0}],sort:[{field:'dueAt',direction:'asc'},{field:'id',direction:'asc'}],limit:32,cursor});
+   return {jobs:page.documents.filter(row=>!row._deleted&&pendingStates.includes(row.body.state)).map(row=>this.status(row)),cursor:page.nextCursor??null};
+  }
+  let cursors=pendingStates.map(()=>null);
+  if(cursor!==null){try{cursors=JSON.parse(cursor.slice(9));}catch{throw new ApiError(400,'Invalid job cursor');}}
+  ensure(Array.isArray(cursors)&&cursors.length===pendingStates.length&&cursors.every(value=>value===null||value===false||typeof value==='string'),400,'Invalid job cursor');
+  const pages=await batches(pendingStates,2,async(state,index)=>{
+   if(cursors[index]===false)return {documents:[],nextCursor:null};
+   return this.documents().query({predicates:[{field:'state',operator:'eq',value:state}],sort:[{field:'id',direction:'asc'}],limit:32,cursor:cursors[index]});
+  });
+  const next=pages.map(page=>page.nextCursor??false);
+  return {jobs:pages.flatMap(page=>page.documents).filter(row=>!row._deleted&&pendingStates.includes(row.body.state)).map(row=>this.status(row)),cursor:next.every(value=>value===false)?null:'pending1:'+JSON.stringify(next)};
  }
  async due(limit=8) {
   ensure(Number.isInteger(limit)&&limit>0&&limit<=32);

@@ -119,3 +119,13 @@ Cancellation MUST use revision comparison so a concurrent claim wins safely.
 #### Scenario: Browser discovers cloud cancellation
 - **WHEN** a complete successful pending scan no longer returns an unchanged queued entry with no local command
 - **THEN** that entry stops contributing to the browser operation count, while local command receipts and entries from incomplete scans remain recoverable
+
+### Requirement: Pending queue freshness is explicit
+Pending-job discovery SHALL use indexed pending-state queries without scanning
+completed, failed or cancelled history. It SHALL retain needs-attention visibility.
+Restored browser counts MUST be labelled saved until discovery succeeds; failed
+refresh MUST show an error and retry without losing command identities.
+
+#### Scenario: Refresh with cancelled jobs in browser storage
+- **WHEN** the browser restores old queued entries
+- **THEN** it identifies those counts as saved while checking and reconciles them from pending cloud states without reading terminal history

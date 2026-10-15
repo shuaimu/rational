@@ -74,3 +74,9 @@ commands or create financial test writes just to close the checklist.
 - [x] 10.1 Implement bounded, revision-fenced automatic job supersession, preserving manual requests and all started work; test races, replay, malformed identities and scan bounds.
 - [x] 10.2 Reconcile browser pending discovery without losing local commands and clarify queued versus active operations; test failed/partial discovery and completion races.
 - [x] 10.3 Deploy and execute cloud-only cleanup, verify retained work and unchanged schedule cadence, publish the frontend, and record live evidence.
+
+## 11. Make queue freshness explicit
+
+- [x] 11.1 Query pending states through an additive state/id index, preserving paged recovery and needs-attention visibility without scanning terminal history.
+- [x] 11.2 Label saved counts until discovery succeeds and expose failed refresh/retry; preserve accepted commands on failure.
+- [x] 11.3 Deploy the index/API and frontend, verify the user's tabs and record evidence.

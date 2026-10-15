@@ -7,7 +7,7 @@ frontend has no localhost API proxy or automatic fallback. Supabase is obsolete.
 ## Deployed runtime
 
 - Destination: Rational environment `env_482f584a064bb6dc32c443f7c746c5af`.
-- `robinlab-api` version 6: owner-authenticated API, scoped storage credentials,
+- `robinlab-api` version 7: owner-authenticated API, scoped storage credentials,
   durable commands, bounded uploads and daily automatic quote admission.
 - `robinlab-jobs` version 5: private scheduler entrypoint, bounded job phases,
   retries, provider rate limits, captured inputs and retention cleanup.
@@ -152,3 +152,25 @@ A completed browser discovery removes stale cloud-only queued entries. Partial
 or failed discovery does not remove anything, and local command receipts remain
 tracked until their terminal result is recovered. The operations panel separates
 queued, running and waiting-to-resume counts.
+
+### Pending queue index and freshness
+
+Before deploying API version 7, create the additive index described by
+`indexes/jobs-pending.json`:
+
+```sh
+mako-cloud indexes create robinlab_jobs --name by_state_id --version 1 \
+  --field state:ascending --field id:ascending --project "$MAKO_PROJECT_ID" \
+  --env "$MAKO_ENVIRONMENT_ID" --profile robinlab
+```
+
+Wait for the index to become active. `/jobs` reads at most 32 rows in each of
+five pending states (including needs-attention) with two storage requests in
+parallel. Its composite cursor continues only states with more rows. Legacy
+cursors still finish using their prior ordering during deployment. Completed,
+failed and cancelled history is never scanned on a fresh request.
+
+The browser labels restored entries as saved while checking and after a failed
+refresh, with an explicit retry control. A successful discovery restores the
+current queued/running/waiting summary. Failed discovery retries after a minute;
+successful periodic checks remain five minutes apart.
