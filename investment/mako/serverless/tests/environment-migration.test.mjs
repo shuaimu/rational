@@ -31,13 +31,13 @@ test('rollback after a destination write transfers current state rather than res
  assert.deepEqual((await source.repository().load()).dataset,(await destination.repository().load()).dataset);
 });
 test('moving accepted jobs retains hourly command identity across environment revisions',async()=>{
- const {JobStore}=await import('../shared/jobs.js'),{admitHourly}=await import('../jobs/dispatcher.js');
+ const {JobStore}=await import('../shared/jobs.js'),{dailyOptions}=await import('../jobs/dispatcher.js');
  const source=await fixture(),destination=await fixture();
  const sourceJobs=new JobStore(()=>source.documents('robinlab_jobs'));
- const accepted=await admitHourly(sourceJobs,'2026-09-27T23:00:00Z');
+ const accepted=await sourceJobs.admit('snaptrade_hourly_2026092723','snaptrade',dailyOptions);
  transfer(source,destination,{publishHead:true});
  const destinationJobs=new JobStore(()=>destination.documents('robinlab_jobs'));
- const replay=await admitHourly(destinationJobs,'2026-09-27T23:59:00Z');
+ const replay=await destinationJobs.admit('snaptrade_hourly_2026092723','snaptrade',dailyOptions);
  assert.equal(replay.body.id,accepted.body.id);assert.equal(replay.body.attempt,0);
  assert.equal([...destination.state.rows.keys()].filter(k=>k.startsWith('robinlab_jobs:')).length,1);
 });

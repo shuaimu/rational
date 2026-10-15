@@ -1,23 +1,25 @@
 # RobinLab serverless runtime
 
-Normal operation uses Mako Cloud functions in Rational / robinlab. Only the React
-Vite server runs locally; the Rust API and local hourly timer are stopped. The
+Normal operation uses Mako Cloud functions and the published Rational website.
+Vite is only needed for frontend development; the Rust API and native timer are stopped. The
 frontend has no localhost API proxy or automatic fallback. Supabase is obsolete.
 
 ## Deployed runtime
 
-- `robinlab-api` version 6: owner-authenticated API, scoped storage credentials,
-  durable command identities, bounded uploads and cloud job admission.
-  Bundle `sha256:6a1cf0225fc0e4b29116c4547eeadff2a17d36c4f9e416423044ce39925fdb1f`.
-- `robinlab-jobs` version 7: private scheduler entrypoint, bounded job phases,
+- Destination: Rational environment `env_482f584a064bb6dc32c443f7c746c5af`.
+- `robinlab-api` version 4: owner-authenticated API, scoped storage credentials,
+  durable commands, bounded uploads and daily automatic quote admission.
+- `robinlab-jobs` version 4: private scheduler entrypoint, bounded job phases,
   retries, provider rate limits, captured inputs and retention cleanup.
-  Bundle `sha256:e48f1e1981e436c613d9dbc032fbde74ce012333420e96ebb5371b6543e5ab07`.
-- Dispatcher `sch_eds861nfcp7vmojq` runs every minute. It admits one SnapTrade job
-  and one quote-refresh job per UTC hour and advances pending work. No browser or
-  local worker is required. The no-data qualification schedule remains paused.
-- Runtime v1.74.3; limits: 5 s CPU, 25 s wall, 256 MiB memory, 1 MiB request and
-  response, API concurrency 2 and worker concurrency 1. The platform does not
-  report exact CPU or peak isolate heap measurements.
+- Exactly one dispatcher, `sch_u0i2krq8abg26q4f`, runs **hourly**, using
+  `0 * * * *` in UTC (also recorded in `jobs/schedule.json`). It admits one
+  automatic SnapTrade job and one automatic quote-refresh job per **UTC day**.
+  Opening Positions shares the same daily quote identity. No browser or local
+  worker is required; the source environment's writers remain closed.
+- Previously accepted hourly jobs retain their identities and checkpoints.
+  Manual imports retain their own command identities and use the hourly worker.
+- Limits: 5 s CPU, 25 s wall, 256 MiB memory, 1 MiB request and response,
+  API concurrency 2 and worker concurrency 1.
 
 Service and provider secrets reside in Mako secret storage. Public runtime
 identifiers are in `mako/runtime.json`; browser config includes only the public
@@ -55,8 +57,9 @@ browser retains the import ID with the upload across reload/background completio
 Terminal captures expire after seven days through bounded idle cleanup. Durable
 receipts and response artifacts remain; active and needs-attention jobs are protected.
 
-The dispatcher executes one bounded phase per minute. Large imports, cache scans
-and hourly provider work can therefore take several minutes. `retry` with no error
+The dispatcher executes one bounded phase per hour. Large imports, cache scans
+and provider work can therefore take many hours or days, especially behind an
+existing backlog. Daily admission is not a daily completion guarantee. `retry` with no error
 also represents a normal checkpoint waiting for its next phase. Admin summaries
 are complete asynchronous captures and display their `as_of` timestamp.
 
@@ -77,7 +80,7 @@ Deploy the corresponding bundle/entrypoint with the Mako CLI and reviewed
 configuration. Keep the binary Wasm asset and generated `.d.ts` together.
 Never expose the internal domain interface as an arbitrary owner storage API.
 
-Qualification includes:
+Historical source qualification (before the Rational environment migration) includes:
 
 - 78 native/domain/core Rust tests, 30 function tests and seven frontend regression
   tests, plus frontend lint/build and strict OpenSpec validation.
@@ -105,7 +108,8 @@ Qualification includes:
   Original-result replay works after deletion; the synthetic transaction is absent.
   Existing Excel import replay returns its original result without re-importing.
 - Automatic, non-manual dispatcher invocations run worker version 7 successfully.
-  Repeated ticks retain exactly one job per kind per UTC hour and advance checkpoints.
+  At that historical cutover, repeated ticks retained one job per kind per UTC hour
+  and advanced checkpoints. The current daily cadence supersedes that frequency.
 
 Protected screenshots, reports and exports are in `.local/mako-serverless/`, with
 final evidence under `cutover-20260927/`. They contain private portfolio data and

@@ -35,12 +35,19 @@ unchanged household functions/schedules. The combined site is published at
 transactions, positions and performance; shared sign-in and deep-link reloads
 passed. The reviewed browser Wasm bundle is tracked for clean CI builds.
 
-Destination API/jobs versions 3/3 are active, with exactly one Investment
-dispatcher. Two consecutive scheduled runs succeeded, two imported jobs advanced,
-and all 784 imported job identities remained present. New hourly work uses the
-existing stable command identities. The temporary verifier is disabled and its
+Destination API/jobs versions 4/4 are active, with exactly one Investment
+dispatcher running hourly (`0 * * * *`, UTC). Automatic brokerage and price
+refresh admission is daily, with shared UTC-day identities for API and scheduled
+quotes. Previously accepted hourly jobs retain their identities and checkpoints.
+The initial publication checks observed two consecutive successful runs, two
+advanced imported jobs, and all 784 preserved imported job identities. The temporary verifier is disabled and its
 three credentials are retired. No local migration runtime is required. Protected
-receipts are in `.local/integration/publish-20261014/`.
+receipts are in `.local/integration/publish-20261014/`; the cadence revision is
+recorded in `.local/integration/daily-cadence-20261014/`. The worker still executes
+one bounded phase per tick, so multi-step jobs may take days at the hourly cadence.
+A hosted version-4 verification run returned HTTP 200 after one gateway-unavailable
+attempt; the intermittent platform gateway issue remains separate from this change.
+All 54 hosted-function tests and strict validation of all three OpenSpec changes pass.
 
 Publication checks also exposed unbounded browser polling of the migrated job
 backlog. Recovery now discovers queued background work in pages and limits
@@ -308,7 +315,7 @@ non-head collections before separately publishing the final head with
    API admission in `draining` mode. New mutations and provider
    work return 503 with the destination URL; job-status reads remain available.
    Deploy source jobs in `draining` mode. Finish checkpointed work without
-   admitting hourly jobs or starting queued work. Accepted unstarted jobs retain
+   admitting daily automatic jobs or starting queued work. Accepted unstarted jobs retain
    IDs, inputs and due times for transfer. Needs-attention work requires explicit
    reconciliation; never repeat an uncertain provider registration.
 3. Pause the source schedule, wait out the longest invocation and claim lease,
@@ -329,8 +336,9 @@ non-head collections before separately publishing the final head with
    after those checks pass, then verify report/replay parity and real-browser
    access under read-only functions. Preserve source resources.
 6. Deploy destination API/jobs in `active` mode and enable exactly one destination
-   investment schedule. The household schedules remain independent. Stable
-   `hourly_*` command IDs prevent duplicate admission within the same UTC hour.
+   investment schedule. The household schedules remain independent. The current
+   schedule is hourly; stable UTC-day command IDs deduplicate new automatic work
+   across the day, while historical hourly IDs and checkpoints are preserved.
 7. Publish both static entry points together. Verify direct hash links, Wasm
    assets, owner and non-owner behavior, cross-tab sign-out, offline recovery,
    accounts/trades/options, reports, uploads, provider flows and cache actions.

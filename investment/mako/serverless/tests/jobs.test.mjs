@@ -33,16 +33,16 @@ test('cancellation fences a running worker and retry waits durably without sleep
  const resumed=await f.store().claim(another.body.id,'worker_recovered_0001');assert.deepEqual(resumed.body.checkpoint,retry.body.checkpoint);
 });
 
-test('manual and hourly imports share one durable lane across worker restarts',async()=>{
- const {fixture}=await import('./fixtures.mjs'),{JobLanes}=await import('../shared/coordination.js'),{admitHourly}=await import('../jobs/dispatcher.js');
+test('manual and daily imports share one durable lane across worker restarts',async()=>{
+ const {fixture}=await import('./fixtures.mjs'),{JobLanes}=await import('../shared/coordination.js'),{admitDaily}=await import('../jobs/dispatcher.js');
  const f=await fixture(),jobs=new JobStore(()=>f.documents('robinlab_jobs'));
  const manual=await jobs.admit('manual_sync_00000001','snaptrade',{apply:true});
- const hourly=await admitHourly(jobs,'2026-09-26T12:03:00Z'),duplicate=await admitHourly(jobs,'2026-09-26T12:59:00Z');assert.equal(hourly.body.id,duplicate.body.id);
+ const daily=await admitDaily(jobs,'2026-09-26T12:03:00Z'),duplicate=await admitDaily(jobs,'2026-09-26T23:59:00Z');assert.equal(daily.body.id,duplicate.body.id);
  const lanes=()=>new JobLanes(()=>f.documents('robinlab_lanes'),jobs);
  assert.equal(await lanes().acquire('snaptrade',manual.body.id),true);
- assert.equal(await lanes().acquire('snaptrade',hourly.body.id),false);
+ assert.equal(await lanes().acquire('snaptrade',daily.body.id),false);
  await jobs.cancel(manual.body.id);
- assert.equal(await lanes().acquire('snaptrade',hourly.body.id),true);
+ assert.equal(await lanes().acquire('snaptrade',daily.body.id),true);
  assert.equal(await lanes().acquire('snaptrade',manual.body.id),false);
 });
 

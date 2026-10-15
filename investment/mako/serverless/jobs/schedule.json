@@ -1,0 +1,5 @@
+{
+  "function": "robinlab-jobs",
+  "cron": "0 * * * *",
+  "timezone": "UTC"
+}

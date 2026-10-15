@@ -70,3 +70,18 @@ Rollback SHALL preserve every accepted investment write. Before destination acti
 #### Scenario: Rollback after destination write
 - **WHEN** rollback is required after the destination accepts a transaction
 - **THEN** that transaction and its retry receipt are preserved in the rollback target before source admission resumes
+
+### Requirement: Daily automatic investment sync with hourly dispatch
+The destination investment dispatcher SHALL run once per hour and admit at most one new automatic brokerage import and one automatic price refresh per UTC day. Automatic price refresh requested by the API SHALL share the dispatcher’s daily identity. Accepted historical jobs, checkpoints and manual command identities MUST be preserved. Daily admission does not guarantee completion within a day.
+
+#### Scenario: Repeated automatic requests in one day
+- **WHEN** hourly dispatcher ticks or automatic API quote requests occur within the same UTC day
+- **THEN** they reuse the same respective daily job identities, including after completion or retries
+
+#### Scenario: Next UTC day
+- **WHEN** an automatic request occurs on the next UTC day
+- **THEN** it admits that day’s job without rewriting previous jobs
+
+#### Scenario: Existing pending work
+- **WHEN** the schedule changes from every minute to every hour
+- **THEN** accepted jobs retain their original identities and checkpoints and progress in bounded hourly phases without a local runtime

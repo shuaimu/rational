@@ -1,10 +1,8 @@
-import {ensure} from '../shared/errors.js';
+import {utcDay} from '../shared/quote-admission.js';
 export {admitQuotes} from '../shared/quote-admission.js';
-export const hourlyOptions={apply:true,reconstruct_rolls:true,fresh:false,replace:false,roll_detect:false,start_date:null};
-export async function admitHourly(jobs,due){
- const timestamp=Date.parse(due);ensure(Number.isFinite(timestamp),400,'Invalid scheduled time');
- const hour=new Date(timestamp).toISOString().slice(0,13).replace(/[-T]/g,'');
- return jobs.admit(`snaptrade_hourly_${hour}`,'snaptrade',hourlyOptions);
+export const dailyOptions={apply:true,reconstruct_rolls:true,fresh:false,replace:false,roll_detect:false,start_date:null};
+export async function admitDaily(jobs,due){
+ return jobs.admit(`snaptrade_daily_${utcDay(due)}`,'snaptrade',dailyOptions);
 }
-// The native timer is retired; Mako's dispatcher owns hourly admission.
-export const HOURLY_SYNC_ENABLED=true;
+// The native timer is retired; Mako's hourly dispatcher owns daily admission.
+export const DAILY_SYNC_ENABLED=true;

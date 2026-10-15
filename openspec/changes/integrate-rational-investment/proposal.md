@@ -10,6 +10,7 @@ RobinLab now runs entirely on Mako Cloud but remains a separate product from Rat
 - Share Rational's authenticated session across both entry points. Preserve private investment access by default; household sharing is a pending preference, not implied by using one environment.
 - **BREAKING**: migrate the investment runtime from environment `env_833a71a6da540180b4e64c05cfb90e6d` into Rational's configured environment `env_482f584a064bb6dc32c443f7c746c5af` in the existing Rational project. Rebind identities, policies, scoped service credentials, functions, schedules, and browser configuration.
 - Preserve existing Rational records and investment ledger/history, provider mappings, command receipts, durable jobs, and caches through a verified, resumable migration with a single active investment writer environment.
+- Run automatic brokerage and price refresh admission once per UTC day, with the single investment dispatcher waking hourly; preserve accepted jobs and manual command identities.
 - Build both static frontends into Rational's existing Pages deployment. Require no local Rust API or background process.
 - Defer automatic brokerage-account consolidation and household net-worth projection; this change must not duplicate investment balances in Rational.
 

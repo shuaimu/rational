@@ -43,20 +43,20 @@ contain portfolio data. Runtime public identifiers are in `mako/runtime.json`.
    changed any cache rows after qualification. There must be no outside cache
    writer when the cloud cache maintenance lane becomes authoritative.
 5. Change normal frontend routing to the cloud endpoint and remove the local
-   Vite proxy. Enable cloud hourly/quote admission, package and deploy both API
+   Vite proxy. Enable cloud daily brokerage/quote admission, package and deploy both API
    and worker from the validated source. Enable exactly one dispatcher schedule.
    Keep the no-data qualification schedule paused.
 6. Restart the normal frontend. Verify no port-3000 listener and no temporary tick
    helper, then exercise reads, a reversible mutation, original-command replay,
    empty/repeated import, replica catch-up and a real hosted schedule tick. Check
-   hourly deduplication and job progress without the browser being open.
+   daily deduplication and job progress without the browser being open.
 7. Remove temporary test origins and dev servers after preserving evidence. Record
    deployed version hashes, schedule state, final process inventory and exports.
    Update README, AGENTS and OpenSpec context to describe the final runtime.
 
 ## Roll back compute against current Mako state
 
-Pause the dispatcher and disable new hourly/quote admission first. Prevent new
+Pause the dispatcher and disable new daily brokerage/quote admission first. Prevent new
 mutation traffic and reconcile every running, committing or needs-attention job;
 never abandon a cache job in the middle of its captured mutation plan. Preserve
 accepted cloud command IDs and complete cache generations.

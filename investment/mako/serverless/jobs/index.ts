@@ -16,7 +16,7 @@ import {SnapTradeCapture} from './snaptrade.js';
 import {JobWorker} from './worker.js';
 import {CacheReports} from './cache-reports.js';
 import {JobLanes} from '../shared/coordination.js';
-import {admitHourly,admitQuotes,HOURLY_SYNC_ENABLED} from './dispatcher.js';
+import {admitDaily,admitQuotes,DAILY_SYNC_ENABLED} from './dispatcher.js';
 const scope={endpoint:Deno.env.get('MAKO_API_URL')!,projectId:Deno.env.get('MAKO_PROJECT_ID')!,environmentId:Deno.env.get('MAKO_ENVIRONMENT_ID')!};
 initSync({module:await Deno.readFile(new URL('../generated/robinlab_function_wasm_bg.wasm',import.meta.url))});
 const domain=input=>domainCall(domain_invoke,input);
@@ -30,7 +30,7 @@ Deno.serve(async request=>{
  if(!['active','draining'].includes(RUNTIME_MODE))return Response.json({processed:0,paused:true});
  try{
   const jobs=new JobStore(()=>documents('robinlab_jobs'),{canonical:value=>domain({action:'canonical',value}).payload});
-  if(RUNTIME_MODE==='active'&&HOURLY_SYNC_ENABLED){await admitHourly(jobs,due);await admitQuotes(jobs,due);}
+  if(RUNTIME_MODE==='active'&&DAILY_SYNC_ENABLED){await admitDaily(jobs,due);await admitQuotes(jobs,due);}
   const lanes=new JobLanes(()=>documents('robinlab_lanes'),jobs);
   const candidates=(await lanes.runnable(await jobs.due(32),Date.now(),{draining:RUNTIME_MODE==='draining'})).slice(0,1);let processed=0;
 

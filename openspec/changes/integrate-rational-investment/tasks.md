@@ -56,3 +56,9 @@ Publication note: live reads/navigation/reload and cloud progress passed on Octo
 Tasks 6.2/6.3 remain open for the unresolved intermittent session invalidation and
 remaining post-cutover write/import/admin qualification; do not repeat accepted
 commands or create financial test writes just to close the checklist.
+
+## 8. Reduce automatic synchronization frequency
+
+- [x] 8.1 Use shared UTC-day identities for automatic brokerage and quote admission, including API-triggered quotes; verify day boundaries, replay, and legacy-job preservation.
+- [x] 8.2 Deploy the updated API and jobs functions, change the existing destination dispatcher to hourly, and verify live configuration and a bounded hosted run.
+- [x] 8.3 Update current runtime documentation and handoff with the cadence and completion-time tradeoff; publish the reviewed source change.
