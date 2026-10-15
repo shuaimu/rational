@@ -178,7 +178,8 @@ successful periodic checks remain five minutes apart.
 Scheduled responses opt into Mako durable continuations with
 `makoContinuation.delaySeconds` (5–300 seconds). Each invocation retains the
 existing 25-second wall limit and single worker concurrency. Continuations stop
-on idle/error, schedule pause, request changes, 256 steps or the next cron slot;
+on idle or an error with no independent healthy lane, schedule pause, request
+changes, 256 steps or the next cron slot;
 hourly dispatch remains recovery. Job leases, lane ownership, provider backoff and
 revision-fenced checkpoints remain authoritative. No local worker is required.
 
@@ -194,6 +195,13 @@ cannot overwrite a new successful-sync receipt.
 
 Portfolio capture/planning reads pin a head and save hash-verified graph pages
 of at most 16 documents. Cold phases resume those pages instead of repeating a
-full scan. Cache mutation batches are capped at 32 rows per phase. These bounds
+full scan. Portfolio staging batches are capped at 16 documents and cache mutation
+batches at 32 rows per phase. These bounds
 leave room for checkpoint persistence and a scheduler response within the existing
 function deadline.
+
+Mako's transport timeout must outlast the runtime response: the gateway allows
+330 seconds and the scheduler 360 seconds, covering the runtime's maximum
+300-second worker limit plus grace. This does not raise this application's
+25-second execution limit. A shorter gateway wait can lose a successful response
+and its requested continuation even after the job saved progress.

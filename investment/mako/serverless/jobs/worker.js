@@ -102,7 +102,7 @@ export class JobWorker {
    const prepared=await this.artifacts.load(id,point.plan);
    const documents=[...prepared.public_content.map(body=>({kind:'public',body})),...prepared.private_content.map(body=>({kind:'private',body})),{kind:'command',body:prepared.command}];
    ensure(Number.isInteger(point.offset)&&point.offset>=0&&point.offset<=documents.length);
-   const batch=documents.slice(point.offset,point.offset+32);await batches(batch,4,({kind,body})=>this.repository.stage(kind,body));
+   const batch=documents.slice(point.offset,point.offset+16);await batches(batch,4,({kind,body})=>this.repository.stage(kind,body));
    const offset=point.offset+batch.length;return this.advance(claim,{...point,offset,phase:offset===documents.length?'publish':'stage'});
   }
   if(point.phase==='publish') {
