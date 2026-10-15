@@ -99,11 +99,12 @@ export class JobWorker {
    const plan=await this.artifacts.save(id,prepared);return this.advance(claim,{...point,phase:'stage',plan,offset:0});
   }
   if(point.phase==='stage') {
+   const started=performance.now();
    const prepared=await this.artifacts.load(id,point.plan);
    const documents=[...prepared.public_content.map(body=>({kind:'public',body})),...prepared.private_content.map(body=>({kind:'private',body})),{kind:'command',body:prepared.command}];
    ensure(Number.isInteger(point.offset)&&point.offset>=0&&point.offset<=documents.length);
-   const batch=documents.slice(point.offset,point.offset+16);await batches(batch,4,({kind,body})=>this.repository.stage(kind,body));
-   const offset=point.offset+batch.length;return this.advance(claim,{...point,offset,phase:offset===documents.length?'publish':'stage'});
+   const loaded=performance.now(),batch=documents.slice(point.offset,point.offset+8);await batches(batch,4,({kind,body})=>this.repository.stage(kind,body));
+   const offset=point.offset+batch.length;console.log(JSON.stringify({event:'stage_progress',offset,total:documents.length,loadMs:Math.round(loaded-started),writeMs:Math.round(performance.now()-loaded)}));return this.advance(claim,{...point,offset,phase:offset===documents.length?'publish':'stage'});
   }
   if(point.phase==='publish') {
    const prepared=await this.artifacts.load(id,point.plan);

@@ -195,7 +195,7 @@ cannot overwrite a new successful-sync receipt.
 
 Portfolio capture/planning reads pin a head and save hash-verified graph pages
 of at most 16 documents. Cold phases resume those pages instead of repeating a
-full scan. Portfolio staging batches are capped at 16 documents and cache mutation
+full scan. Portfolio staging batches are capped at eight documents and cache mutation
 batches at 32 rows per phase. These bounds
 leave room for checkpoint persistence and a scheduler response within the existing
 function deadline.

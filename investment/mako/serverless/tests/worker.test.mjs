@@ -121,8 +121,8 @@ test('large staging plans checkpoint before a bounded transport budget and publi
  const claim=await f.jobs.claim(job.body.id,'stage_setup_worker');
  await f.jobs.checkpoint(claim,{phase:'stage',plan,offset:0},{state:'retry',retryAt:f.clock()+1000});f.tick();
  const staged=new Set();let publications=0;
- f.worker=()=>{let writes=0;return new JobWorker({jobs:f.jobs,artifacts:f.artifacts,clock:f.clock,repository:{stage:async(kind,body)=>{assert.ok(++writes<=16,'phase exceeded transport budget');staged.add(body.id);},publishHead:async()=>{assert.equal(staged.size,34);publications++;return {version:2};}}});};
+ f.worker=()=>{let writes=0;return new JobWorker({jobs:f.jobs,artifacts:f.artifacts,clock:f.clock,repository:{stage:async(kind,body)=>{assert.ok(++writes<=8,'phase exceeded transport budget');staged.add(body.id);},publishHead:async()=>{assert.equal(staged.size,34);publications++;return {version:2};}}});};
  const first=await f.worker().run(job.body.id,'bounded_stage_worker');
- assert.equal(first.body.error,null);assert.equal(first.body.checkpoint.offset,16);assert.equal(publications,0);f.tick();
+ assert.equal(first.body.error,null);assert.equal(first.body.checkpoint.offset,8);assert.equal(publications,0);f.tick();
  const done=await drain(f,job.body.id);assert.equal(done.body.result.version,2);assert.equal(publications,1);
 });
