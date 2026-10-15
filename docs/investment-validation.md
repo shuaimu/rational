@@ -245,3 +245,33 @@ After the rate-limit deployment, four remaining small source exports completed;
 14 of 15 final collections are now sealed. Only the saved-input collection remains
 unsealed, with its separate size and snapshot-duration limits unresolved.
 No final head, destination writer activation, or combined Pages publication occurred.
+
+### October 15 sync recovery deployment
+
+The post-cutover broker job completed a fresh capture of all seven linked accounts
+and published portfolio version 250. Its durable completion receipt records
+`2026-10-15 20:40:55` UTC. A fresh hosted Brokers page showed version 250 and
+“Last synced: 10/15/2026, 4:40:55 PM EDT”, replacing the October 5 timestamp.
+Private CLI receipts and browser evidence are retained locally. Earlier dated
+migration blockers above are historical, not the current cutover status.
+
+Destination API v8 and jobs v12 are active. The single dispatcher remains hourly;
+automatic broker/quote admission remains daily. Bounded cloud continuations,
+resumable verified snapshots, eight-document staging batches, fresh capture dates
+and indexed completion receipts preserve command identities and truthful status.
+An independent price-job retry no longer prevents healthy broker work continuing.
+No financial worker or timer runs locally.
+
+Mako release `2f0bc1f1dc2b08079de17050e647f83b387a4882e6b37be7dd85d23c4f9da751`
+adds durable scheduled continuations and corrects the gateway's old 30-second
+response timeout. The gateway/scheduler transport waits now outlast the runtime's
+execution allowance, without changing tenant execution limits. All four services
+passed readiness. Source is tracked in Mako Cloud PR 23; its unrelated dependency
+audit finding against unchanged rustls 0.23.45 remains a separate follow-up.
+
+Validation includes 72 investment function tests, 25 frontend tests, investment
+Cargo tests, frontend lint/build and root typecheck. Platform validation includes
+201 control-plane tests for continuations and, after timeout changes, 14 scheduler,
+14 gateway-service and five protocol tests plus affected all-targets clippy. The
+gateway regression exercises a real response delayed beyond 30 seconds. Remaining
+broad browser/financial qualification tasks 6.2/6.3 are not closed by this check.
