@@ -17,6 +17,7 @@ import {JobWorker} from './worker.js';
 import {CacheReports} from './cache-reports.js';
 import {JobLanes} from '../shared/coordination.js';
 import {admitDaily,admitQuotes,DAILY_SYNC_ENABLED} from './dispatcher.js';
+import {coalesceAutomatic} from '../shared/automatic-jobs.js';
 const scope={endpoint:Deno.env.get('MAKO_API_URL')!,projectId:Deno.env.get('MAKO_PROJECT_ID')!,environmentId:Deno.env.get('MAKO_ENVIRONMENT_ID')!};
 initSync({module:await Deno.readFile(new URL('../generated/robinlab_function_wasm_bg.wasm',import.meta.url))});
 const domain=input=>domainCall(domain_invoke,input);
@@ -31,6 +32,10 @@ Deno.serve(async request=>{
  try{
   const jobs=new JobStore(()=>documents('robinlab_jobs'),{canonical:value=>domain({action:'canonical',value}).payload});
   if(RUNTIME_MODE==='active'&&DAILY_SYNC_ENABLED){await admitDaily(jobs,due);await admitQuotes(jobs,due);}
+  const url=new URL(request.url),maintenance=url.pathname.endsWith('/maintenance/automatic-jobs');
+  const cleanup=RUNTIME_MODE==='active'?await coalesceAutomatic(jobs,{dryRun:maintenance&&url.searchParams.get('dryRun')==='true'}):null;
+  console.log(JSON.stringify({event:'automatic_job_cleanup',...cleanup}));
+  if(maintenance)return Response.json({processed:0,cleanup});
   const lanes=new JobLanes(()=>documents('robinlab_lanes'),jobs);
   const candidates=(await lanes.runnable(await jobs.due(32),Date.now(),{draining:RUNTIME_MODE==='draining'})).slice(0,1);let processed=0;
 
@@ -42,6 +47,6 @@ Deno.serve(async request=>{
    await worker.run(candidate.body.id,run);processed++;
   }
   if(!processed)await new ArtifactCleanup({jobs,uploads:new UploadStore(()=>documents('robinlab_uploads')),artifacts:new Artifacts(()=>documents('robinlab_inputs'))}).step();
-  return Response.json({processed});
+  return Response.json({processed,cleanup});
  }catch(error){console.error(JSON.stringify({event:'dispatch_unavailable',type:error?.name,status:error?.status,code:error?.code,requestId:error?.requestId}));return Response.json({error:'Job dispatch is unavailable'},{status:503});}
 });

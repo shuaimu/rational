@@ -68,3 +68,9 @@ commands or create financial test writes just to close the checklist.
 - [x] 9.1 Identify the live 429 rejection, raise only API concurrency to 16, serve status from verified private metadata, deploy and verify configuration while retaining worker/schedule settings.
 - [x] 9.2 Bound background discovery/recovery and preserve command identities; persist owner-scoped Brokers status with bounded, explicit error handling.
 - [x] 9.3 Run regression tests, frontend lint/build and live read checks; publish the source/frontend and retain deployment evidence.
+
+## 10. Reconcile obsolete automatic backlog
+
+- [x] 10.1 Implement bounded, revision-fenced automatic job supersession, preserving manual requests and all started work; test races, replay, malformed identities and scan bounds.
+- [x] 10.2 Reconcile browser pending discovery without losing local commands and clarify queued versus active operations; test failed/partial discovery and completion races.
+- [x] 10.3 Deploy and execute cloud-only cleanup, verify retained work and unchanged schedule cadence, publish the frontend, and record live evidence.

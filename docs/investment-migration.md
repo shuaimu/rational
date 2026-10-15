@@ -35,7 +35,7 @@ unchanged household functions/schedules. The combined site is published at
 transactions, positions and performance; shared sign-in and deep-link reloads
 passed. The reviewed browser Wasm bundle is tracked for clean CI builds.
 
-Destination API/jobs versions 6/4 are active, with exactly one Investment
+Destination API/jobs versions 6/5 are active, with exactly one Investment
 dispatcher running hourly (`0 * * * *`, UTC). Automatic brokerage and price
 refresh admission is daily, with shared UTC-day identities for API and scheduled
 quotes. Previously accepted hourly jobs retain their identities and checkpoints.
@@ -393,3 +393,18 @@ The Brokers page keeps owner-scoped last-known status across reloads, clears it
 with protected state, and bounds fresh reads to 15 seconds with an explicit
 error on cloud failure. Private deployment and verification receipts are in
 `.local/integration/cloud-429-20261015/`.
+
+## October 15 automatic backlog cleanup
+
+The owner authorized cancellation of outdated automatic jobs. Jobs version 5
+adds bounded CAS-fenced supersession for recognized never-started automatic
+requests; API version 6 and daily admission/hourly dispatch remain unchanged.
+Cloud-only maintenance cancels 337 obsolete hourly broker/quote requests and two
+superseded cache reports, retaining the newest request of each kind, the manual
+broker sync and both checkpointed lane owners. Cancellation preserves job rows,
+command identities and audit history. Manual and started work is not cancelled.
+
+The frontend now removes stale cloud-only queued records after a successful full
+pending scan and explicitly shows queued/running/waiting counts. Local commands,
+replication waits and entries from failed/partial discovery remain recoverable.
+This fixes the backlog count; it does not claim that pending imports have completed.

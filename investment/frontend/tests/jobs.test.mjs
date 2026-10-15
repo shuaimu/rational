@@ -84,3 +84,25 @@ test('background discovery waits five minutes before rescanning the retained bac
   now+=1;jobs.recoverJobs();await new Promise(resolve=>setImmediate(resolve));assert.equal(scans,2);
  }finally{Date.now=original;}
 });
+
+test('complete discovery removes stale cloud-only queued entries but preserves local commands',async()=>{
+ setup();const jobs=await load();
+ const manual={...queued,id:'j_'+'b'.repeat(64)},active={...queued,id:'j_'+'c'.repeat(64),state:'retry'};
+ jobs.trackJob(queued);jobs.trackJob(manual,command);jobs.trackJob(active);
+ jobs.configureJobs({list:async()=>({jobs:[],cursor:null}),get:async id=>id===manual.id?manual:active,cancel:async()=>queued,complete:()=>{}});
+ jobs.recoverJobs();await new Promise(resolve=>setImmediate(resolve));
+ assert.deepEqual(new Set(jobs.getJobs().map(job=>job.id)),new Set([manual.id,active.id]));
+});
+test('failed or repeating-cursor discovery never drops unseen saved jobs',async()=>{
+ for(const repeated of [false,true]){
+  setup();const jobs=await load();jobs.trackJob(queued);let calls=0;
+  jobs.configureJobs({list:async()=>{if(++calls===1||repeated)return {jobs:[],cursor:'more'};throw Error('offline');},get:async()=>queued,cancel:async()=>queued,complete:()=>{}});
+  jobs.recoverJobs();await new Promise(resolve=>setImmediate(resolve));assert.equal(jobs.getJobs().length,1);assert.equal(calls,2);
+ }
+});
+test('discovery preserves commands admitted or changed while a scan was in flight',async()=>{
+ setup();const jobs=await load();jobs.trackJob(queued);let release;
+ jobs.configureJobs({list:()=>new Promise(resolve=>{release=resolve;}),get:async()=>queued,cancel:async()=>queued,complete:()=>{}});
+ jobs.recoverJobs();jobs.trackJob(queued,command);jobs.trackJob({...queued,id:'j_'+'d'.repeat(64)});
+ release({jobs:[],cursor:null});await new Promise(resolve=>setImmediate(resolve));assert.equal(jobs.getJobs().length,2);
+});

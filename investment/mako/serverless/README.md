@@ -9,7 +9,7 @@ frontend has no localhost API proxy or automatic fallback. Supabase is obsolete.
 - Destination: Rational environment `env_482f584a064bb6dc32c443f7c746c5af`.
 - `robinlab-api` version 6: owner-authenticated API, scoped storage credentials,
   durable commands, bounded uploads and daily automatic quote admission.
-- `robinlab-jobs` version 4: private scheduler entrypoint, bounded job phases,
+- `robinlab-jobs` version 5: private scheduler entrypoint, bounded job phases,
   retries, provider rate limits, captured inputs and retention cleanup.
 - Exactly one dispatcher, `sch_u0i2krq8abg26q4f`, runs **hourly**, using
   `0 * * * *` in UTC (also recorded in `jobs/schedule.json`). It admits one
@@ -124,3 +124,31 @@ Historical source qualification (before the Rational environment migration) incl
 Protected screenshots, reports and exports are in `.local/mako-serverless/`, with
 final evidence under `cutover-20260927/`. They contain private portfolio data and
 must not be committed or attached to public issues. See [compute rollback](cutover-runbook.md).
+
+### Automatic backlog reconciliation
+
+Each hourly dispatcher pass retains the newest never-started automatic broker,
+quote and cache-report request and cancels superseded automatic requests. Only
+recognized generated command identities with exact automatic inputs and queued,
+zero-attempt state are eligible. Manual imports, started jobs, checkpoints and
+publishing work remain unchanged. Cancelled rows retain their identities and the
+reason `superseded_automatic_request`; no portfolio data is removed.
+
+Cleanup inspects at most five 200-row pending pages and cancels at most 32 jobs
+with revision comparison and four concurrent storage requests. If inspection is
+incomplete it reports `incomplete: true` and cancels nothing. Inspect the
+`automatic_job_cleanup` log event for counts and conflicts. Large backlogs require
+operator inspection rather than silently exceeding those bounds.
+
+The existing trusted scheduler can run `/maintenance/automatic-jobs?dryRun=true`
+for a preview or `/maintenance/automatic-jobs` for cleanup without advancing
+financial jobs. Restore the schedule path to `/` after maintenance; keep the
+hourly cron, single dispatcher and worker concurrency unchanged. Public requests
+cannot supply the trusted scheduler headers. The October 15 cleanup cancelled
+339 redundant requests, leaving six pending jobs, including one manual import
+and two checkpointed jobs.
+
+A completed browser discovery removes stale cloud-only queued entries. Partial
+or failed discovery does not remove anything, and local command receipts remain
+tracked until their terminal result is recovered. The operations panel separates
+queued, running and waiting-to-resume counts.

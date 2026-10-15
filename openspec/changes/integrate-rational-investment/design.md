@@ -143,3 +143,23 @@ Brokers status must retain its last successful owner-scoped value across reloads
 clear it with protected state, show a refresh error alongside stale data, and
 bound status reads including authentication to 15 seconds. These small reads
 surface HTTP 429 directly; write idempotency/backoff behavior remains unchanged.
+
+### Supersede obsolete automatic backlog (October 15)
+
+The owner authorized cancellation of outdated jobs after inspection found hundreds
+of never-started hourly brokerage/quote jobs. Each active hourly dispatch will
+coalesce recognized automatic jobs, retaining the newest queued request per
+purpose. Cancellation applies only to queued, zero-attempt/zero-generation jobs
+without checkpoints, results, workers or leases, using the inspected revision as
+a CAS fence. Manual commands and all started work remain intact. Retain cancelled
+rows and command identities with an explicit superseded reason; never delete or
+rewrite portfolio data. Bound each pass to 32 cancellations and a 1000-row pending
+scan; an incomplete scan reports that fact and makes no cancellation decisions.
+A trusted scheduler maintenance path allows the existing schedule to run cleanup
+passes without advancing financial work. Restore its ordinary path after cleanup.
+
+On a complete successful pending-list discovery, browser-only queued entries missing from the result are
+removed if they have no local command and have not changed during the scan. Local
+manual command receipts remain tracked until their terminal outcome is recovered.
+Failed/partial discovery never removes entries. The operations panel explicitly
+summarizes queued and active states. Daily admission and hourly dispatch remain.

@@ -100,3 +100,22 @@ The investment API SHALL admit ordinary foreground status reads alongside bounde
 #### Scenario: Repeated background recovery ticks
 - **WHEN** a backlog is present and multiple recovery ticks occur
 - **THEN** the browser respects the recovery bounds without cancelling, deleting or rewriting accepted commands
+
+### Requirement: Obsolete automatic work is superseded safely
+After explicit owner authorization, the hourly dispatcher SHALL cancel redundant
+never-started automatic broker imports, automatic quote refreshes and automatic
+cache reports while retaining the newest queued request per purpose. It MUST
+preserve manual commands, checkpoints, attempted work and all command identities.
+Cancellation MUST use revision comparison so a concurrent claim wins safely.
+
+#### Scenario: Backlog contains automatic and manual work
+- **WHEN** a cleanup pass finds multiple recognized automatic queued jobs
+- **THEN** it cancels at most 32 older zero-attempt jobs, retains the newest request and all manual or started work, and records superseded cancellation outcomes
+
+#### Scenario: Worker claims during inspection
+- **WHEN** a worker changes an inspected job revision before cancellation
+- **THEN** cancellation does not overwrite that worker's state
+
+#### Scenario: Browser discovers cloud cancellation
+- **WHEN** a complete successful pending scan no longer returns an unchanged queued entry with no local command
+- **THEN** that entry stops contributing to the browser operation count, while local command receipts and entries from incomplete scans remain recoverable

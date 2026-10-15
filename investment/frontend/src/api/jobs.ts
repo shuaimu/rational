@@ -99,13 +99,24 @@ export function recoverJobs() {
   if (!discovery && Date.now() >= nextDiscovery) {
     nextDiscovery = Date.now() + 300_000;
     discovery = (async () => {
+      const before = new Map(snapshot.map(job => [job.id, job]));
+      const seen = new Set<string>();
+      const cursors = new Set<string>();
       let cursor: string | null = null;
       do {
         const page = await transport.list(cursor);
         if (requireOwnerScope() !== scope) return;
-        for (const job of page.jobs) trackJob(job);
+        for (const job of page.jobs) { seen.add(job.id); trackJob(job); }
         cursor = page.cursor;
+        if (cursor && cursors.has(cursor)) throw new Error('Cloud operation discovery did not advance.');
+        if (cursor) cursors.add(cursor);
       } while (cursor);
+      // A successful full scan is authoritative only for unchanged queued entries
+      // discovered from the cloud. Never discard a local command or a result that
+      // still needs replication, or infer cancellation from a failed partial scan.
+      snapshot = snapshot.filter(job => seen.has(job.id) || before.get(job.id) !== job ||
+        job.state !== 'queued' || job.command || job.waitingForSync);
+      persist();
     })().catch(() => { /* Retry discovery after reconnect; known jobs remain. */ }).finally(() => { discovery = null; });
   }
   // Five-minute discovery refreshes queued background work in pages. Poll only active work
