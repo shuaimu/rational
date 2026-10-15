@@ -105,3 +105,12 @@ test('planning discards a pinned snapshot when another command advances the head
  const complete=await drain(f,job.body.id,50);assert.equal(complete.body.result.version,3);
  assert.deepEqual((await f.repository().load()).dataset.public.accounts.map(a=>a.code).sort(),['JOB','OTHER']);
 });
+
+test('split capture bounds concurrent reads and checkpoints both results together',async()=>{
+ const {SnapTradeCapture}=await import('../jobs/snaptrade.js');const f=await setup(),job=await f.jobs.admit('split_batch_bound_01','snaptrade',{});
+ const state={startedAt:f.clock(),phase:'splits',splitOffset:0,splitSymbols:['A','B','C'],splits:[],refreshed:[]};
+ const ref=await f.artifacts.save(job.body.id,state);let active=0,maximum=0,calls=0;
+ const capture=new SnapTradeCapture({artifacts:f.artifacts,clock:f.clock,cache:{get:async()=>null},domain:({symbol})=>[{symbol,split_date:'2026-09-01',multiplier:2}],http:async()=>{calls++;maximum=Math.max(maximum,++active);await new Promise(resolve=>setImmediate(resolve));active--;return Response.json({});}});
+ const next=await capture.step(job.body,ref),saved=await f.artifacts.load(job.body.id,next.reference);
+ assert.equal(calls,2);assert.equal(maximum,2);assert.equal(saved.splitOffset,2);assert.deepEqual(saved.refreshed,['A','B']);assert.deepEqual(saved.splits.map(row=>row.symbol),['A','B']);assert.equal((await f.artifacts.load(job.body.id,ref)).splitOffset,0);
+});

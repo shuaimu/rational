@@ -38,19 +38,20 @@ export class SnapTradeCapture {
    for(const account of accounts){const amount=account.balance?.total?.amount;if(typeof account.id==='string'&&Number.isFinite(amount))state.balances[account.id]=amount;}
    state.phase='splits';state.splitOffset=0;
   }else if(state.phase==='splits'){
-   const symbol=state.splitSymbols[state.splitOffset];
-   if(!symbol){state.latest=await this.cache.latest();state.phase='assemble';}
+   const symbols=state.splitSymbols.slice(state.splitOffset,state.splitOffset+2);
+   if(!symbols.length){state.latest=await this.cache.latest();state.phase='assemble';}
    else{
-    const prior=await this.cache.get('split_fetch',[symbol]),fetched=prior?.body.row.fetched_at;
-    const fresh=fetched&&Date.parse(fetched.replace(' ','T')+'Z')>state.startedAt-7*86400000;
-    if(!fresh){
-     // Preserve the native best-effort HTTPS split feed independently of the
-     // disabled Yahoo quote/Python provider. Capture failure as an empty feed.
+    // Independent read-only feeds share one checkpoint and run concurrently, so
+    // two slow feeds still consume one 12-second provider timeout budget.
+    const results=await batches(symbols,2,async symbol=>{
+     const prior=await this.cache.get('split_fetch',[symbol]),fetched=prior?.body.row.fetched_at;
+     if(fetched&&Date.parse(fetched.replace(' ','T')+'Z')>state.startedAt-7*86400000)return {symbol,rows:null};
      let response={};
      try{const result=await this.http(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?period1=0&period2=9999999999&interval=1d&events=split`,{headers:{'User-Agent':'Mozilla/5.0'},redirect:'manual',signal:AbortSignal.timeout(12000)});if(result.ok)response=await boundedJson(result);else await result.body?.cancel();}catch{}
-     state.splits=state.splits.filter(row=>row.symbol!==symbol);state.splits.push(...this.domain({action:'normalize_splits',symbol,response}));state.refreshed.push(symbol);
-    }
-    state.splitOffset++;
+     return {symbol,rows:this.domain({action:'normalize_splits',symbol,response})};
+    });
+    for(const {symbol,rows} of results)if(rows!==null){state.splits=state.splits.filter(row=>row.symbol!==symbol);state.splits.push(...rows);state.refreshed.push(symbol);}
+    state.splitOffset+=symbols.length;
    }
   }else if(state.phase==='assemble'){
    const pages=await batches(state.pages,4,ref=>this.artifacts.load(id,ref));
