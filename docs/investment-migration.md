@@ -29,11 +29,25 @@ its partial scan is not represented as a completed verification.
 
 The verified portfolio head is published with exact readback. Fresh checks found
 all six source writer functions closed, no active source write credentials, and
-unchanged household functions/schedules. Destination API/jobs remain read-only
-while the combined static site is published and checked in a real browser.
-Activation of the staged API/jobs and the single Investment dispatcher follows
-those checks. No local migration runtime or bulk download is required. Protected
+unchanged household functions/schedules. The combined site is published at
+`https://shuaimu.github.io/rational/`, with the separate Investment page beneath
+`investment/`. The hosted browser rendered version 249, all 11 accounts,
+transactions, positions and performance; shared sign-in and deep-link reloads
+passed. The reviewed browser Wasm bundle is tracked for clean CI builds.
+
+Destination API/jobs versions 3/3 are active, with exactly one Investment
+dispatcher. Two consecutive scheduled runs succeeded, two imported jobs advanced,
+and all 784 imported job identities remained present. New hourly work uses the
+existing stable command identities. The temporary verifier is disabled and its
+three credentials are retired. No local migration runtime is required. Protected
 receipts are in `.local/integration/publish-20261014/`.
+
+Publication checks also exposed unbounded browser polling of the migrated job
+backlog. Recovery now discovers queued background work in pages and limits
+individual recovery polls to four overlapping requests; the long operation list
+is collapsible. Two unexpected sign-outs occurred during the earlier checks.
+A fresh Google session subsequently passed repeated navigation, but the precise
+sign-out trigger remains unconfirmed; sanitized diagnostics remain available.
 
 The bounded input importer defaults to one job and optionally accepts
 `--concurrency 1..4`. A single journal owner keeps the same part boundaries and

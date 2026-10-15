@@ -43,3 +43,21 @@ test('a new browser discovers accepted cloud jobs without another admission',asy
  assert.equal(pages,2);assert.equal(jobs.getJobs().length,2);assert.ok(jobs.getJobs().every(job=>job.scope===command.scope));
  jobs.recoverJobs();await new Promise(resolve=>setImmediate(resolve));assert.equal(pages,2);
 });
+
+test('a migrated queued backlog uses paged discovery instead of a per-job request burst',async()=>{
+ setup();const jobs=await load();let reads=0;
+ const backlog=Array.from({length:335},(_,i)=>({...queued,id:'j_'+i.toString(16).padStart(64,'0'),kind:'snaptrade'}));
+ jobs.configureJobs({list:async()=>({jobs:backlog,cursor:null}),get:async()=>{reads++;return queued;},cancel:async()=>queued,complete:()=>{}});
+ jobs.recoverJobs();await new Promise(resolve=>setImmediate(resolve));jobs.recoverJobs();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(jobs.getJobs().length,335);assert.equal(reads,0);
+});
+test('background recovery bounds overlapping requests and fairly resumes active jobs',async()=>{
+ setup();const jobs=await load(),seen=[],releases=[];
+ const active=Array.from({length:10},(_,i)=>({...queued,id:'j_'+i.toString(16).padStart(64,'0'),state:'running'}));
+ jobs.configureJobs({list:async()=>({jobs:[],cursor:null}),get:id=>new Promise(resolve=>{seen.push(id);releases.push(()=>resolve(active.find(job=>job.id===id)));}),cancel:async()=>queued,complete:()=>{}});
+ for(const job of active)jobs.trackJob(job);
+ jobs.recoverJobs();jobs.recoverJobs();assert.equal(seen.length,4);
+ for(const release of releases.splice(0))release();await new Promise(resolve=>setImmediate(resolve));
+ jobs.recoverJobs();assert.equal(seen.length,8);assert.equal(new Set(seen).size,8);
+ for(const release of releases.splice(0))release();await new Promise(resolve=>setImmediate(resolve));
+});

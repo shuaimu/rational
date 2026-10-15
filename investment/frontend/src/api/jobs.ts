@@ -23,6 +23,9 @@ const inflight = new Map<string, Promise<CloudJob>>();
 let transport: { list: (cursor: string | null) => Promise<{ jobs: CloudJob[]; cursor: string | null }>; get: (id: string) => Promise<CloudJob>; cancel: (id: string) => Promise<CloudJob>; complete: (command: JobCommand) => void };
 let discovery: Promise<void> | null = null;
 let nextDiscovery = 0;
+const recoveryOrder = new Map<string, number>();
+let recoverySequence = 0;
+const recoveryConcurrency = 4;
 export function configureJobs(value: typeof transport) { transport = value; }
 export const subscribeJobs = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 export const getJobs = () => snapshot;
@@ -86,7 +89,7 @@ export function dismissJob(id: string) {
   const job = snapshot.find(row => row.id === id);
   if (!job || !terminal(job.state) || job.waitingForSync) return;
   if (job.command) transport.complete(job.command);
-  snapshot = snapshot.filter(row => row.id !== id); persist();
+  snapshot = snapshot.filter(row => row.id !== id); recoveryOrder.delete(id); persist();
 }
 export function recoverJobs() {
   let scope: string; try { scope = requireOwnerScope(); } catch { return; }
@@ -103,9 +106,19 @@ export function recoverJobs() {
       } while (cursor);
     })().catch(() => { /* Retry discovery after reconnect; known jobs remain. */ }).finally(() => { discovery = null; });
   }
-  for (const job of snapshot) if (!terminal(job.state) || job.waitingForSync || job.state === 'completed' && !job.settled) void refreshJob(job.id).catch(() => { /* Keep the durable job visible for reconnect/reload. */ });
+  // Discovery refreshes queued background work in pages. Poll only active work
+  // and this device's commands individually; a migrated backlog must not create
+  // hundreds of simultaneous function/auth requests on every timer tick.
+  const candidates = snapshot.filter(job => !inflight.has(job.id) && (
+    job.waitingForSync || job.state === 'completed' && !job.settled ||
+    !terminal(job.state) && (job.state !== 'queued' || job.command)
+  )).sort((a, b) => (recoveryOrder.get(a.id) ?? 0) - (recoveryOrder.get(b.id) ?? 0));
+  for (const job of candidates.slice(0, Math.max(0, recoveryConcurrency - inflight.size))) {
+    recoveryOrder.set(job.id, ++recoverySequence);
+    void refreshJob(job.id).catch(() => { /* Preserve recovery identity for the next bounded retry. */ });
+  }
 }
 onClearProtectedState(async nextScope => {
   for (const name of Object.keys(localStorage)) if (name.startsWith(prefix) && name !== (nextScope ? key(nextScope) : '')) localStorage.removeItem(name);
-  currentScope = ''; snapshot = []; nextDiscovery = 0; emit();
+  currentScope = ''; snapshot = []; nextDiscovery = 0; recoveryOrder.clear(); recoverySequence = 0; emit();
 });

@@ -10,15 +10,24 @@ graph/history/captures and all nine native/Wasm report comparisons remain pinned
 The final portfolio head is published and its exact readback passed. Six source
 writer functions remain closed, no source write credential is active, and
 household function versions/configurations and schedules are unchanged.
-Destination API/jobs remain read-only until the newly published static site
-passes the live portfolio browser checks. Full activation is still pending.
+Destination API/jobs versions 3/3 are active after the hosted browser rendered
+the verified portfolio. Exactly one Investment dispatcher is enabled; two
+scheduled runs succeeded and imported job checkpoints advanced without local
+workers. All 784 imported job identities were preserved.
 
 The temporary serverless verifier passed 51 hosted function tests, including
 interrupted checkpoint recovery, overlapping invocations, transient failures,
 per-request audit identities, mismatch detection and bounded page resumption.
-All three OpenSpec changes pass strict validation. Earlier application builds,
-Rust tests and browser qualification are recorded below. No local migration
-worker or bulk download is running.
+All three OpenSpec changes pass strict validation. The frontend suite now has 14 passing tests, including queued-backlog recovery
+and bounded, fair polling. Lint passes. Clean GitHub production builds and Pages
+deployment passed after including the provenance-matching browser Wasm package.
+No local migration worker or bulk download is running.
+
+Hosted checks passed for separate app navigation, shared owner sign-in, version
+249, 11 visible accounts, populated transactions/positions/performance, and a
+performance deep-link reload. Two earlier unexpected sign-outs remain a session
+stability follow-up; the latest Google session passed repeated app transitions.
+No sign-out fix is claimed without a confirmed cause.
 
 Concurrent migration commands exposed a separate CLI refresh-cookie race. Mako
 Cloud PR #20 coordinates renewal and logout across processes, preserves concurrent
@@ -30,7 +39,7 @@ no cloud service redeployment.
 ## Completed checks
 
 - Combined static production build, Rational type checks and Investment lint.
-- 230 Rational unit tests, 51 hosted Investment function tests, 12 Investment
+- 230 Rational unit tests, 51 hosted Investment function tests, 14 Investment
   frontend tests, 19 migration-tool tests and 78 Rust workspace tests.
 - Nine local integration checks using the actual auth/RxDB/Dexie code.
 - Eleven isolated real-Chrome checks, including concurrent token refresh under Web
