@@ -64,6 +64,36 @@ export class PortfolioRepository {
     const dataset=this.domain({action:'decode',public:publicBranch,private:privateBranch});
     return {head,dataset};
   }
+  // Cold workers load a pinned graph in bounded pages. Immutable parts live in
+  // job-scoped artifacts, so timeout recovery never restarts a full graph scan.
+  async snapshotStep(artifacts,jobId,reference) {
+    let state;
+    if(!reference){
+      const head=await this.head();
+      state={head,queue:['public','private'].map(kind=>({kind,ref:head.body[kind+'_root'],depth:0})),seen:[],bytes:0,parts:[]};
+    }else state=await artifacts.load(jobId,reference);
+    if(state.data)return {done:true,...await artifacts.load(jobId,state.data)};
+    if(!state.queue.length){
+      const pages=await batches(state.parts,8,ref=>artifacts.load(jobId,ref));
+      const documents=pages.flat(),branch=kind=>({root:state.head.body[kind+'_root'],documents:documents.filter(row=>row.kind===kind).map(row=>row.body)});
+      const dataset=this.domain({action:'decode',public:branch('public'),private:branch('private')});
+      return {reference:await artifacts.save(jobId,{data:await artifacts.save(jobId,{head:state.head,dataset})})};
+    }
+    const seen=new Set(state.seen),selected=state.queue.splice(0,16);
+    for(const {kind,ref,depth} of selected){const key=kind+':'+ref.id;ensure(!seen.has(key)&&seen.size<16384&&depth<=16);seen.add(key);state.bytes+=ref.bytes;ensure(state.bytes<=64*1024*1024);}
+    const rows=await batches(selected,8,async({kind,ref,depth})=>{
+      const prefix=ref.id.slice(0,1);ensure(prefix==='m'||prefix==='p');
+      const {body,value}=await this.verified(kind,ref,prefix);
+      if(prefix==='m'){
+        ensure(value.format===1&&value.visibility===kind&&Array.isArray(value.children)&&value.children.length<=16);
+        return {kind,body,children:value.children.map(child=>({kind,ref:child.content,depth:depth+1}))};
+      }
+      return {kind,body,children:[]};
+    });
+    state.queue.push(...rows.flatMap(row=>row.children));state.seen=[...seen];
+    state.parts.push(await artifacts.save(jobId,rows.map(({kind,body})=>({kind,body}))));
+    return {reference:await artifacts.save(jobId,state)};
+  }
   // Status reads need broker metadata, not the full public transaction graph.
   // Pin one head and verify every traversed manifest/selected partition by hash.
   async brokerAccounts() {

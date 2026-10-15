@@ -172,3 +172,28 @@ retry, committing and needs-attention rows. A composite cursor preserves bounded
 paging across states; legacy cursors remain readable during deployment. Show
 saved counts explicitly while checking or unavailable, and offer a retry after
 failed discovery. Never present restored counts as freshly verified cloud state.
+
+### Sync completion follow-up (October 15)
+
+Authorized scope now includes the Mako Cloud scheduler in an isolated platform
+worktree. A successful scheduled response may opt into a bounded durable follow-up
+through a small typed JSON envelope. The control plane queues it atomically with
+the run completion and lease release. It uses the same schedule and overlap lease,
+stops on pause/request changes, caps chain length and expires before the next cron
+slot. Ordinary hourly cron remains recovery after lost responses or worker errors;
+no new recurring schedule, management credential in functions, or local worker.
+
+Investment requests follow-ups only while runnable work remains, respecting job
+leases/provider backoff. No-progress errors return to hourly recovery. Broker
+capture dates use actual capture start; stale unpublished captures are rebuilt
+under the same accepted command, preserving activity lookback and receipts. A
+durable successful-sync marker is published only after real head publication.
+Keep actual capture time separate from completion time; never advance watermarks
+beyond captured activity or rewrite already published financial plans.
+
+Live qualification also exposed full graph reads that could not finish inside a
+phase. Worker capture, planning and automatic quote discovery now use job-scoped
+immutable snapshot parts, pinning the head and loading at most 16 graph documents
+per phase. Plan publication retains head CAS and restarts history/snapshot when
+the current head changed. Cache mutation phases shrink to 32 rows. Sanitized
+phase/type/status diagnostics distinguish provider backoff from storage failures.

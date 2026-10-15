@@ -67,9 +67,7 @@ browser retains the import ID with the upload across reload/background completio
 Terminal captures expire after seven days through bounded idle cleanup. Durable
 receipts and response artifacts remain; active and needs-attention jobs are protected.
 
-The dispatcher executes one bounded phase per hour. Large imports, cache scans
-and provider work can therefore take many hours or days, especially behind an
-existing backlog. Daily admission is not a daily completion guarantee. `retry` with no error
+The dispatcher wakes hourly and executes one bounded phase per invocation. Successful phases request durable follow-ups while work remains; the cloud scheduler runs those between hourly ticks without a new recurring schedule. Large imports, provider backoff and outages can still delay completion. Daily admission is not a daily completion guarantee. `retry` with no error
 also represents a normal checkpoint waiting for its next phase. Admin summaries
 are complete asynchronous captures and display their `as_of` timestamp.
 
@@ -174,3 +172,28 @@ The browser labels restored entries as saved while checking and after a failed
 refresh, with an explicit retry control. A successful discovery restores the
 current queued/running/waiting summary. Failed discovery retries after a minute;
 successful periodic checks remain five minutes apart.
+
+### Sync freshness and continuation recovery
+
+Scheduled responses opt into Mako durable continuations with
+`makoContinuation.delaySeconds` (5–300 seconds). Each invocation retains the
+existing 25-second wall limit and single worker concurrency. Continuations stop
+on idle/error, schedule pause, request changes, 256 steps or the next cron slot;
+hourly dispatch remains recovery. Job leases, lane ownership, provider backoff and
+revision-fenced checkpoints remain authoritative. No local worker is required.
+
+Broker capture uses its actual start date. Legacy or day-old unpublished captures
+are rebuilt under the same accepted command, retaining the published ledger and
+original import options. Unpublished stale plans return through history checks;
+already publishing plans retain their sealed inputs for idempotent recovery.
+Completed broker jobs record capture start/end and successful-sync time only after
+portfolio publication and split finalization. Status reads use the
+`robinlab_jobs.by_completed_broker_sync` index, falling back to existing account
+metadata until the first new completed receipt exists. Account discovery/linking
+cannot overwrite a new successful-sync receipt.
+
+Portfolio capture/planning reads pin a head and save hash-verified graph pages
+of at most 16 documents. Cold phases resume those pages instead of repeating a
+full scan. Cache mutation batches are capped at 32 rows per phase. These bounds
+leave room for checkpoint persistence and a scheduler response within the existing
+function deadline.

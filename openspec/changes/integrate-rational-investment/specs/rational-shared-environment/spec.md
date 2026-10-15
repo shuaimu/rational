@@ -84,7 +84,7 @@ The destination investment dispatcher SHALL run once per hour and admit at most 
 
 #### Scenario: Existing pending work
 - **WHEN** the schedule changes from every minute to every hour
-- **THEN** accepted jobs retain their original identities and checkpoints and progress in bounded hourly phases without a local runtime
+- **THEN** accepted jobs retain their original identities and checkpoints and progress in bounded cloud phases without a local runtime
 
 ### Requirement: Foreground status remains usable during background recovery
 The investment API SHALL admit ordinary foreground status reads alongside bounded browser job recovery. Recovery SHALL preserve accepted jobs while limiting one per-job background request per tab at a time, spacing reads of the same job by at least one minute, and spacing full discovery scans by five minutes. The API deployment SHALL allow 16 concurrent invocations while the scheduled worker remains single-concurrency.
@@ -129,3 +129,22 @@ refresh MUST show an error and retry without losing command identities.
 #### Scenario: Refresh with cancelled jobs in browser storage
 - **WHEN** the browser restores old queued entries
 - **THEN** it identifies those counts as saved while checking and reconciles them from pending cloud states without reading terminal history
+
+### Requirement: Prompt bounded sync continuation
+Successful scheduled phases MAY request durable bounded follow-ups under the
+same schedule without changing its hourly cron or daily job identities. Follow-ups
+MUST respect pause, overlap, leases and provider retry times, and stop at the next
+cron slot or a fixed chain bound. Completion and follow-up enqueue MUST be atomic.
+
+#### Scenario: Hourly dispatch finds unfinished work
+- **WHEN** a cloud phase advances and runnable work remains
+- **THEN** the scheduler persists a follow-up without a local runtime or a new recurring schedule
+
+### Requirement: Truthful broker freshness
+Broker capture MUST use the actual capture date rather than admission date. Last
+successful sync MUST advance only following verified portfolio publication, and
+MUST identify successful sync completion independently of account-link edits.
+
+#### Scenario: Old queued job resumes
+- **WHEN** an unpublished broker capture is stale
+- **THEN** it is refreshed under the same command before publication and the UI reports the resulting successful sync time

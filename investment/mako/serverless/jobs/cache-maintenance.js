@@ -78,7 +78,10 @@ export class CacheMaintenance {
  async step(job,checkpoint){
   const point=checkpoint?await this.artifacts.load(job.id,checkpoint.capture):{phase:'scan',parts:[],count:0,cursor:null,updates:[],symbol:0};
   if(!point.input&&job.input.mode==='quotes_auto'){
-   const {dataset}=await this.repository.load(),today=new Date(this.clock()).toISOString().slice(0,10);
+   const loaded=await this.repository.snapshotStep(this.artifacts,job.id,point.portfolio);
+   if(!loaded.done)return this.save(job,{...point,portfolio:loaded.reference});
+   const {dataset}=loaded,today=new Date(this.clock()).toISOString().slice(0,10);
+   delete point.portfolio;
    const positions=this.domain({action:'read',operation:'positions',dataset,input:{latest:[],account_id:null,include_closed:false,today}});
    const symbols=new Set();for(const position of positions){symbols.add(position.ticker_symbol);const underlying=this.domain({action:'market_rules',symbol:position.ticker_symbol}).underlying;if(underlying)symbols.add(underlying[0]);}
    point.input={symbols:[...symbols].sort(),mode:'quotes',start:new Date(Date.parse(today)-420*86400000).toISOString().slice(0,10),end:today};
@@ -91,7 +94,7 @@ export class CacheMaintenance {
   const plan=await this.artifacts.load(job.id,point.plan);
   if(point.phase==='begin'){const row=await this.mutate(job,'begin',plan.begin);return this.save(job,{...point,phase:'apply',cacheRevision:row.revision});}
   if(point.phase==='apply'){
-   const batch=plan.changes.slice(point.offset,point.offset+128);
+   const batch=plan.changes.slice(point.offset,point.offset+32);
    await batches(batch.map((intent,i)=>({intent,index:point.offset+i})),8,({intent,index})=>this.mutate(job,`row_${index}`,intent));
    const offset=point.offset+batch.length;return this.save(job,{...point,offset,phase:offset===plan.changes.length?'finish':'apply'});
   }

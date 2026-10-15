@@ -4,7 +4,7 @@ import {fixture,domain} from './fixtures.mjs';
 import {JobStore,LEASE_MILLISECONDS} from '../shared/jobs.js';
 import {Artifacts} from '../shared/artifacts.js';
 import {JobWorker} from '../jobs/worker.js';
-async function setup(){const f=await fixture();let now=Date.parse('2026-09-26T00:00:00Z');const jobs=new JobStore(()=>f.documents('robinlab_jobs'),{clock:()=>now,canonical:value=>domain({action:'canonical',value}).payload});const artifacts=new Artifacts(()=>f.documents('robinlab_inputs'));return {...f,jobs,artifacts,clock:()=>now,tick:()=>{now+=LEASE_MILLISECONDS+1;},worker:()=>new JobWorker({jobs,artifacts,repository:f.repository(),domain,clock:()=>now})};}
+async function setup(){const f=await fixture();let now=Date.parse('2026-09-26T00:00:00Z');const jobs=new JobStore(()=>f.documents('robinlab_jobs'),{clock:()=>now,canonical:value=>domain({action:'canonical',value}).payload});const artifacts=new Artifacts(()=>f.documents('robinlab_inputs'));return {...f,jobs,artifacts,clock:()=>now,advance:ms=>{now+=ms;},tick:()=>{now+=LEASE_MILLISECONDS+1;},worker:()=>new JobWorker({jobs,artifacts,repository:f.repository(),domain,clock:()=>now})};}
 async function drain(f,id,limit=30){let job;for(let i=0;i<limit;i++){job=await f.worker().run(id,`test_worker_${String(i).padStart(8,'0')}`);if(job?.body.state==='completed')return job;assert.ok(!['failed','needs-attention'].includes(job?.body.state));f.tick();}assert.fail('job did not finish');}
 test('durable job resumes bounded history and stages from cold instances',async()=>{
  const f=await setup();for(let i=0;i<26;i++)await f.repository().execute(f.commandInput(`prior_command_${String(i).padStart(8,'0')}`,`P${i}`));
@@ -37,12 +37,17 @@ test('SnapTrade captures immutable pages, previews without a head change, and ap
  const activity={type:'BUY',symbol:{symbol:'TEST'},units:2,price:10,amount:-20,trade_date:'2026-09-25',fee:0};
  const broker={user:()=>null,activities:async()=>{fetched++;return {data:[activity,activity]};},positions:async()=>[{symbol:{symbol:'TEST'},units:4}],accounts:async()=>[{id:'remote',balance:{total:{amount:40}}}]};
  const cache={latest:async()=>[],get:async()=>null,markSplit:async()=>{}};
- f.worker=()=>{const repository=f.repository();return new JobWorker({jobs:f.jobs,repository,artifacts:f.artifacts,domain,cache,clock:f.clock,snaptradeCapture:new SnapTradeCapture({repository,artifacts:f.artifacts,broker,cache,domain,http:async()=>Response.json({})})});};
+ f.worker=()=>{const repository=f.repository();return new JobWorker({jobs:f.jobs,repository,artifacts:f.artifacts,domain,cache,clock:f.clock,snaptradeCapture:new SnapTradeCapture({repository,artifacts:f.artifacts,broker,cache,domain,clock:f.clock,http:async()=>Response.json({})})});};
  const opts={apply:false,reconstruct_rolls:true,fresh:false,replace:false,roll_detect:false,start_date:null};
  const head=(await f.repository().head()).body.sequence;
  const preview=await f.jobs.admit('capture_preview_00001','snaptrade',opts),result=await drain(f,preview.body.id,50);
  assert.equal((await f.repository().head()).body.sequence,head);assert.equal(result.body.result.version,0);assert.ok(result.body.result.responseArtifact);
- const applied=await f.jobs.admit('capture_apply_0000001','snaptrade',{...opts,apply:true});const complete=await drain(f,applied.body.id,50);
+ const applied=await f.jobs.admit('capture_apply_0000001','snaptrade',{...opts,apply:true});f.advance(10*86400000);const complete=await drain(f,applied.body.id,50);
+ assert.equal(complete.body.result.syncedAt,new Date(f.clock()).toISOString().slice(0,19).replace('T',' '));
+ assert.equal(await f.jobs.lastBrokerSync(),complete.body.result.syncedAt);
+ const mapping=(await f.repository().load()).dataset.private.snaptrade_accounts[0];
+ assert.equal(mapping.last_synced_date,'2026-10-06');assert.ok(mapping.updated_at.startsWith('2026-10-06'));
+ assert.ok(complete.body.result.captureStartedAt>applied.body.createdAt);
  assert.equal(complete.body.result.version,head+1);assert.equal((await f.repository().load()).dataset.public.transactions.length,2);assert.equal(fetched,2);
  assert.equal((await f.jobs.admit('capture_apply_0000001','snaptrade',{...opts,apply:true})).body.state,'completed');assert.equal(fetched,2);
 });
@@ -75,4 +80,28 @@ test('provider retry-after survives a cold worker without an in-memory timer',as
  const worker=new JobWorker({jobs:f.jobs,domain,clock:f.clock,snaptradeCapture:{step:async()=>{throw new ProviderError('rate_limited',{retryAt});}}});
  const retry=await worker.run(job.body.id,'provider_worker_001');assert.equal(retry.body.dueAt,retryAt);
  f.tick();assert.equal(await f.jobs.claim(job.body.id,'provider_worker_002'),null);
+});
+
+test('legacy and expired unpublished captures restart with the same command and current date',async()=>{
+ const {SnapTradeCapture}=await import('../jobs/snaptrade.js');
+ const f=await setup(),job=await f.jobs.admit('stale_capture_000001','snaptrade',{apply:true});
+ const seen=[];const capture=new SnapTradeCapture({repository:{snapshotStep:async()=>({done:true,dataset:{}})},broker:{user:()=>null},artifacts:f.artifacts,cache:{},clock:f.clock,domain:input=>{seen.push(input);return {today:input.today,linked:[],splitSymbols:[]};}});
+ for(const startedAt of [undefined,f.clock()-86400000]){
+  const old=await f.artifacts.save(job.body.id,{phase:'positions',account:4,startedAt,today:'2026-09-01'});
+  const next=await capture.step(job.body,old),state=await f.artifacts.load(job.body.id,next.reference);
+  assert.equal(state.phase,'activities');assert.equal(state.startedAt,f.clock());assert.equal(state.today,'2026-09-26');assert.deepEqual(state.pages,[]);
+ }
+ assert.equal(seen.length,2);assert.equal((await f.jobs.get(job.body.id)).body.commandId,job.body.commandId);
+});
+test('planning discards a pinned snapshot when another command advances the head',async()=>{
+ const f=await setup(),job=await f.jobs.admit('snapshot_plan_race_01','portfolio-command',{operation:'create_account',input:{code:'JOB',name:null,account_type:null}});
+ let row;
+ for(let i=0;i<15;i++){
+  row=await f.worker().run(job.body.id,'snapshot_race_worker_01');f.tick();
+  if(row?.body.checkpoint?.snapshot)break;
+ }
+ assert.ok(row.body.checkpoint.snapshot);
+ await f.repository().execute(f.commandInput('snapshot_other_0001','OTHER'));
+ const complete=await drain(f,job.body.id,50);assert.equal(complete.body.result.version,3);
+ assert.deepEqual((await f.repository().load()).dataset.public.accounts.map(a=>a.code).sort(),['JOB','OTHER']);
 });

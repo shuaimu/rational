@@ -79,10 +79,14 @@ export class JobStore {
   const next=pages.map(page=>page.nextCursor??false);
   return {jobs:pages.flatMap(page=>page.documents).filter(row=>!row._deleted&&pendingStates.includes(row.body.state)).map(row=>this.status(row)),cursor:next.every(value=>value===false)?null:'pending1:'+JSON.stringify(next)};
  }
- async due(limit=8) {
+ async lastBrokerSync() {
+  const page=await this.documents().query({predicates:[{field:'kind',operator:'eq',value:'snaptrade'},{field:'state',operator:'eq',value:'completed'},{field:'result.syncedAt',operator:'gte',value:'2000-01-01'}],sort:[{field:'result.syncedAt',direction:'desc'},{field:'id',direction:'desc'}],limit:1,cursor:null});
+  return page.documents.find(row=>!row._deleted)?.body.result.syncedAt??null;
+ }
+ async due(limit=8,at=this.clock()) {
   ensure(Number.isInteger(limit)&&limit>0&&limit<=32);
   // Collection index on dueAt bounds dispatch, including expired running claims.
-  const page=await this.documents().query({predicates:[{field:'dueAt',operator:'lte',value:this.clock()}],sort:[{field:'dueAt',direction:'asc'}],limit,cursor:null});
-  return page.documents.filter(row=>!row._deleted&&!terminal.has(row.body.state)&&row.body.leaseUntil<=this.clock());
+  const page=await this.documents().query({predicates:[{field:'dueAt',operator:'lte',value:at}],sort:[{field:'dueAt',direction:'asc'}],limit,cursor:null});
+  return page.documents.filter(row=>!row._deleted&&!terminal.has(row.body.state)&&row.body.leaseUntil<=at);
  }
 }

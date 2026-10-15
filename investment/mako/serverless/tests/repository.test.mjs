@@ -47,3 +47,36 @@ test('broker status reads only private metadata and rejects a corrupt private ma
  f.state.rows.get(`portfolio_private:${head.body.private_root.id}`).body.payload+=' ';
  await assert.rejects(()=>f.repository().brokerAccounts());assert.equal(f.state.writes,0);
 });
+
+test('bounded snapshot resumes from cold workers and keeps its pinned head',async()=>{
+ const {Artifacts}=await import('../shared/artifacts.js');
+ const f=await fixture(),artifacts=new Artifacts(()=>f.documents('robinlab_inputs')),id='j_'+'b'.repeat(64);
+ await f.repository().execute(f.commandInput('snapshot_account_0001','PINNED'));
+ const expected=await f.repository().load();let step=await f.repository().snapshotStep(artifacts,id);
+ await f.repository().execute(f.commandInput('snapshot_account_0002','LATER'));
+ for(let i=0;i<20&&!step.done;i++)step=await f.repository().snapshotStep(artifacts,id,step.reference);
+ assert.equal(step.done,true);assert.deepEqual(step.dataset,expected.dataset);assert.deepEqual(step.head,expected.head);
+});
+test('bounded snapshot validates immutable content before decoding',async()=>{
+ const {Artifacts}=await import('../shared/artifacts.js');
+ const f=await fixture(),artifacts=new Artifacts(()=>f.documents('robinlab_inputs')),head=await f.repository().head();
+ f.state.rows.get('portfolio_public:'+head.body.public_root.id).body.payload+=' ';
+ await assert.rejects(()=>f.repository().snapshotStep(artifacts,'j_'+'c'.repeat(64)));
+});
+test('large snapshot traversal respects the per-phase read bound',async()=>{
+ const {Artifacts}=await import('../shared/artifacts.js');
+ const f=await fixture(),artifacts=new Artifacts(()=>f.documents('robinlab_inputs')),id='j_'+'d'.repeat(64),head=await f.repository().head();
+ const ref=(prefix,i)=>({id:prefix+'_'+i.toString(16).padStart(64,'0'),bytes:100});
+ const graph=new Map();
+ graph.set(head.body.public_root.id,{format:1,visibility:'public',children:[1,2,3].map(i=>({content:ref('m',i)}))});
+ graph.set(head.body.private_root.id,{format:1,visibility:'private',children:[]});
+ for(let i=1;i<=3;i++)graph.set(ref('m',i).id,{format:1,visibility:'public',children:Array.from({length:15},(_,j)=>({content:ref('p',i*100+j)}))});
+ let step={},maximum=0;
+ for(let i=0;i<40&&!step.done;i++){
+  const repository=f.repository();let reads=0;
+  repository.verified=async(kind,r)=>{reads++;return {body:{id:r.id,payload:'fixture'},value:graph.get(r.id)??{}};};
+  repository.domain=input=>({documentCount:input.public.documents.length});
+  step=await repository.snapshotStep(artifacts,id,step.reference);maximum=Math.max(maximum,reads);assert.ok(reads<=16);
+ }
+ assert.equal(step.done,true);assert.equal(step.dataset.documentCount,49);assert.equal(maximum,16);
+});

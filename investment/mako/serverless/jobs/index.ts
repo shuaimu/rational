@@ -17,6 +17,7 @@ import {JobWorker} from './worker.js';
 import {CacheReports} from './cache-reports.js';
 import {JobLanes} from '../shared/coordination.js';
 import {admitDaily,admitQuotes,DAILY_SYNC_ENABLED} from './dispatcher.js';
+import {continuationResponse} from './continuation.js';
 import {coalesceAutomatic} from '../shared/automatic-jobs.js';
 const scope={endpoint:Deno.env.get('MAKO_API_URL')!,projectId:Deno.env.get('MAKO_PROJECT_ID')!,environmentId:Deno.env.get('MAKO_ENVIRONMENT_ID')!};
 initSync({module:await Deno.readFile(new URL('../generated/robinlab_function_wasm_bg.wasm',import.meta.url))});
@@ -37,16 +38,21 @@ Deno.serve(async request=>{
   console.log(JSON.stringify({event:'automatic_job_cleanup',...cleanup}));
   if(maintenance)return Response.json({processed:0,cleanup});
   const lanes=new JobLanes(()=>documents('robinlab_lanes'),jobs);
-  const candidates=(await lanes.runnable(await jobs.due(32),Date.now(),{draining:RUNTIME_MODE==='draining'})).slice(0,1);let processed=0;
+  const now=Date.now(),dueJobs=await jobs.due(32,now+300000);
+  const runnable=await lanes.runnable(dueJobs,now+300000,{draining:RUNTIME_MODE==='draining'});
+  const candidates=runnable.filter(row=>row.body.dueAt<=now&&row.body.leaseUntil<=now).slice(0,1);
+  let processed=0,progressed=false,pending=[...new Map([...dueJobs,...runnable].map(row=>[row.body.id,row])).values()];
 
   for(const candidate of candidates){
    const repository=new PortfolioRepository({documents,domain}),artifacts=new Artifacts(()=>documents('robinlab_inputs')),cache=new PriceCache(documents);
    const broker=new SnapTrade({clientId:Deno.env.get('SNAPTRADE_CLIENT_ID'),consumerKey:Deno.env.get('SNAPTRADE_CONSUMER_KEY'),canonical:value=>domain({action:'canonical',value}).payload});
    const providerLog=new ProviderLog(documents),provider=new PriceProvider({twelveKey:Deno.env.get('TWELVE_DATA_API_KEY'),limiter:new ProviderLimiter(()=>documents('robinlab_coordination')),record:value=>providerLog.record(value),domain});
    const worker=new JobWorker({jobs,repository,uploads:new UploadStore(()=>documents('robinlab_uploads')),artifacts,domain,broker,cache,reports:new CacheReports({cache,artifacts,domain}),maintenance:new CacheMaintenance({cache,artifacts,domain,provider,repository}),lanes,parseWorkbook:parse_workbook,snaptradeCapture:new SnapTradeCapture({repository,artifacts,broker,cache,domain})});
-   await worker.run(candidate.body.id,run);processed++;
+   const result=await worker.run(candidate.body.id,run);processed++;progressed=!!result&&!result.body.error&&result.body.generation>candidate.body.generation;
+   pending=pending.filter(row=>row.body.id!==candidate.body.id);
+   if(result&&['queued','retry','running','committing'].includes(result.body.state))pending.push(result);
   }
   if(!processed)await new ArtifactCleanup({jobs,uploads:new UploadStore(()=>documents('robinlab_uploads')),artifacts:new Artifacts(()=>documents('robinlab_inputs'))}).step();
-  return Response.json({processed,cleanup});
+  return Response.json(continuationResponse({processed,cleanup,progressed,pending}));
  }catch(error){console.error(JSON.stringify({event:'dispatch_unavailable',type:error?.name,status:error?.status,code:error?.code,requestId:error?.requestId}));return Response.json({error:'Job dispatch is unavailable'},{status:503});}
 });

@@ -54,11 +54,13 @@ export class JobWorker {
    ensure(this.snaptradeCapture,503,'Broker capture is unavailable');
    const capture=await this.snaptradeCapture.step(job,point?.capture);
    if(!capture.done)return this.advance(claim,{phase:'capture_snaptrade',capture:capture.reference});
-   point={phase:!job.input.apply||job.input.roll_detect?'preview_snaptrade':'history',operation:'import_snaptrade',input:job.input,identity:this.domain({action:'identity',id:job.commandId,operation:'import_snaptrade',input:job.input}),captured:capture.captured,now:timestamp(job.createdAt)};
+   point={phase:!job.input.apply||job.input.roll_detect?'preview_snaptrade':'history',operation:'import_snaptrade',input:job.input,identity:this.domain({action:'identity',id:job.commandId,operation:'import_snaptrade',input:job.input}),captured:capture.captured,captureStartedAt:capture.captureStartedAt??this.clock(),captureCompletedAt:capture.captureCompletedAt??this.clock(),now:timestamp(capture.captureCompletedAt??this.clock())};
    return this.advance(claim,point);
   }
   if(point?.phase==='preview_snaptrade') {
-   const {dataset}=await this.repository.load(),captured=await this.artifacts.load(id,point.captured);
+   const loaded=await this.repository.snapshotStep(this.artifacts,id,point.snapshot);
+   if(!loaded.done)return this.advance(claim,{...point,snapshot:loaded.reference});
+   const {dataset}=loaded,captured=await this.artifacts.load(id,point.captured);
    const response=this.domain({action:'preview_snaptrade',dataset,captured,options:job.input,now:point.now});
    const responseArtifact=await this.artifacts.save(id,response);return this.jobs.checkpoint(claim,null,{state:'completed',result:{version:0,responseArtifact}});
   }
@@ -82,10 +84,17 @@ export class JobWorker {
    return this.advance(claim,{...point,history,phase:state.ref?'history':point.afterHistory??'plan'});
   }
   if(point.phase==='plan') {
+   // Only unpublished work can be refreshed. Keep its command identity and run
+   // history/replay checks again before applying fresh provider observations.
+   if(job.kind==='snaptrade'&&(!Number.isSafeInteger(point.captureStartedAt)||this.clock()-point.captureStartedAt>=86400000))
+    return this.advance(claim,{phase:'capture_snaptrade'});
    const history=await this.artifacts.load(id,point.history),head=await this.repository.head();
-   if(head.revision!==history.head.revision){const {history:_,...reset}=point;return this.advance(claim,{...reset,phase:'history'});}
+   if(head.revision!==history.head.revision){const {history:_,snapshot:__,...reset}=point;return this.advance(claim,{...reset,phase:'history'});}
    ensure(!history.ref&&!history.result);
-   const {dataset}=await this.repository.load(head),captured=point.captured?await this.artifacts.load(id,point.captured):undefined;
+   const loaded=await this.repository.snapshotStep(this.artifacts,id,point.snapshot);
+   if(!loaded.done)return this.advance(claim,{...point,snapshot:loaded.reference});
+   if(loaded.head.revision!==head.revision)return this.advance(claim,{...point,history:null,snapshot:null,phase:'history'});
+   const {dataset}=loaded,captured=point.captured?await this.artifacts.load(id,point.captured):undefined;
    const prepared=this.domain({action:'prepare',dataset,nextIds:head.body.next_ids,previous:{head:head.body,revision:head.revision},identity:point.identity,operation:point.operation,input:point.input,now:point.now,captured});
    const plan=await this.artifacts.save(id,prepared);return this.advance(claim,{...point,phase:'stage',plan,offset:0});
   }
@@ -106,13 +115,13 @@ export class JobWorker {
     if(point.operation==='import_snaptrade')return this.jobs.checkpoint(claim,{...point,phase:'finalize_split',splitOffset:0,result},{state:'committing'});
     return this.jobs.checkpoint(claim,null,{state:'completed',result});
    }
-   const {history:_,plan:__,offset:___,...reset}=point;return this.advance(claim,{...reset,phase:'history'});
+   const {history:_,plan:__,offset:___,snapshot:____,...reset}=point;return this.advance(claim,{...reset,phase:'history'});
   }
   if(point.phase==='finalize_split') {
    const captured=await this.artifacts.load(id,point.captured),symbols=captured.refreshed_split_symbols;
    const batch=symbols.slice(point.splitOffset,point.splitOffset+16);
    await batches(batch,4,symbol=>this.cache.markSplit(symbol,point.now));const splitOffset=point.splitOffset+batch.length;
-   if(splitOffset===symbols.length)return this.jobs.checkpoint(claim,null,{state:'completed',result:point.result});
+   if(splitOffset===symbols.length)return this.jobs.checkpoint(claim,null,{state:'completed',result:{...point.result,...(Number.isSafeInteger(point.captureStartedAt)?{syncedAt:timestamp(this.clock()),captureStartedAt:point.captureStartedAt,captureCompletedAt:point.captureCompletedAt}:{})}});
    return this.advance(claim,{...point,splitOffset});
   }
   throw new ApiError(503,'Job checkpoint is inconsistent');
@@ -123,6 +132,7 @@ export class JobWorker {
    if(this.lanes&&['snaptrade','summary','cache-clear','prefetch'].includes(claim.body.kind)&&!await this.lanes.acquire(claim.body.kind==='snaptrade'?'snaptrade':'cache',id))return this.jobs.checkpoint(claim,claim.body.checkpoint,{state:'retry',retryAt:this.clock()+10000});
    return await this.step(claim);
   }catch(error){
+   console.error(JSON.stringify({event:'job_phase_failed',kind:claim.body.kind,phase:claim.body.checkpoint?.phase??'start',type:error?.constructor?.name,status:error?.status,code:error?.code,elapsed:this.clock()-claim.body.updatedAt}));
    // A newer worker/cancellation wins. Never replace its progress with our error.
    const latest=await this.jobs.get(id);if(latest.revision!==claim.revision)return latest;
    if(claim.body.leaseUntil<=this.clock())return latest;

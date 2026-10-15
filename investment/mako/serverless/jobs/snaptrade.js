@@ -1,16 +1,19 @@
 import {ensure,batches} from '../shared/errors.js';
 import {boundedJson} from '../shared/providers.js';
 export class SnapTradeCapture {
- constructor({repository,broker,artifacts,cache,domain,http=fetch}){Object.assign(this,{repository,broker,artifacts,cache,domain,http});}
+ constructor({repository,broker,artifacts,cache,domain,http=fetch,clock=()=>Date.now()}){Object.assign(this,{repository,broker,artifacts,cache,domain,http,clock});}
  async step(job,reference){
-  const id=job.id,options=job.input,asOf=new Date(job.createdAt).toISOString().slice(0,10);
-  let state;
-  if(!reference){
-   const {dataset}=await this.repository.load();
-   state={...this.domain({action:'plan_snaptrade_capture',dataset,options,today:asOf}),user:this.broker.user(dataset),phase:'activities',account:0,offset:0,capturedBytes:0,pages:[],perAccount:[],stocks:[],balances:{},refreshed:[],latest:[]};
+  const id=job.id,options=job.input,startedAt=this.clock();
+  let state=reference?await this.artifacts.load(id,reference):null;
+  if(!state||!Number.isSafeInteger(state.startedAt)||startedAt-state.startedAt>=86400000)
+   state={startedAt,phase:'load_portfolio'};
+  if(state.phase==='load_portfolio'){
+   const snapshot=await this.repository.snapshotStep(this.artifacts,id,state.snapshot);
+   if(!snapshot.done)return {reference:await this.artifacts.save(id,{...state,snapshot:snapshot.reference})};
+   const {dataset}=snapshot;
+   state={startedAt:state.startedAt,...this.domain({action:'plan_snaptrade_capture',dataset,options,today:new Date(state.startedAt).toISOString().slice(0,10)}),user:this.broker.user(dataset),phase:'activities',account:0,offset:0,capturedBytes:0,pages:[],perAccount:[],stocks:[],balances:{},refreshed:[],latest:[]};
    return {reference:await this.artifacts.save(id,state)};
   }
-  state=await this.artifacts.load(id,reference);
   if(state.phase==='activities'){
    const account=state.linked[state.account];
    if(!account){state.phase=options.apply&&!options.roll_detect?'positions':'assemble';state.account=0;}
@@ -39,7 +42,7 @@ export class SnapTradeCapture {
    if(!symbol){state.latest=await this.cache.latest();state.phase='assemble';}
    else{
     const prior=await this.cache.get('split_fetch',[symbol]),fetched=prior?.body.row.fetched_at;
-    const fresh=fetched&&Date.parse(fetched.replace(' ','T')+'Z')>job.createdAt-7*86400000;
+    const fresh=fetched&&Date.parse(fetched.replace(' ','T')+'Z')>state.startedAt-7*86400000;
     if(!fresh){
      // Preserve the native best-effort HTTPS split feed independently of the
      // disabled Yahoo quote/Python provider. Capture failure as an empty feed.
@@ -52,7 +55,7 @@ export class SnapTradeCapture {
   }else if(state.phase==='assemble'){
    const pages=await batches(state.pages,4,ref=>this.artifacts.load(id,ref));
    const captured={linked:state.linked.map(a=>[a.sid,a.account_id,a.code]),transactions:pages.flat(),per_account:state.perAccount,stocks:state.stocks,balances:state.balances,splits:state.splits,refreshed_split_symbols:state.refreshed,latest:state.latest,today:state.today};
-   return {done:true,captured:await this.artifacts.save(id,captured)};
+   return {done:true,captured:await this.artifacts.save(id,captured),captureStartedAt:state.startedAt,captureCompletedAt:this.clock()};
   }else ensure(false,503,'Broker capture checkpoint is invalid');
   return {reference:await this.artifacts.save(id,state)};
  }

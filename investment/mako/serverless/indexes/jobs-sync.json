@@ -1,0 +1,24 @@
+{
+  "collectionId": "robinlab_jobs",
+  "name": "by_completed_broker_sync",
+  "version": 1,
+  "kind": "non_unique",
+  "fields": [
+    {
+      "path": "kind",
+      "direction": "ascending"
+    },
+    {
+      "path": "state",
+      "direction": "ascending"
+    },
+    {
+      "path": "result.syncedAt",
+      "direction": "descending"
+    },
+    {
+      "path": "id",
+      "direction": "descending"
+    }
+  ]
+}

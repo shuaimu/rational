@@ -80,3 +80,9 @@ commands or create financial test writes just to close the checklist.
 - [x] 11.1 Query pending states through an additive state/id index, preserving paged recovery and needs-attention visibility without scanning terminal history.
 - [x] 11.2 Label saved counts until discovery succeeds and expose failed refresh/retry; preserve accepted commands on failure.
 - [x] 11.3 Deploy the index/API and frontend, verify the user's tabs and record evidence.
+
+## 12. Complete admitted sync promptly and report truthful freshness
+
+- [x] 12.1 Add bounded durable scheduler continuations in Mako Cloud, with atomic enqueue, pause/overlap protection, hourly fallback and focused tests.
+- [x] 12.2 Request continuations for runnable investment work, recapture stale unpublished broker inputs, and persist truthful capture/success times without changing daily admission or financial idempotency.
+- [ ] 12.3 Deploy the platform and investment fixes, observe a real broker publication and verify the hosted Brokers timestamp.

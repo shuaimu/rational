@@ -48,3 +48,8 @@ test('broker discovery, linking and personal registration use private domain rec
  assert.deepEqual(await (await statusOnly(request('/snaptrade/status'))).json(),{last_synced_at:'2026-09-26 00:00:00'});
  assert.equal((await invoke(request('/snaptrade/connect'))).status,200);
 });
+
+test('Brokers status prefers an actual successful job receipt over account edits',async()=>{
+ const invoke=createApi({authorize:async()=>{},domain,broker:{},jobs:{lastBrokerSync:async()=> '2026-10-15 18:00:00'},repository:{brokerAccounts:async()=>{throw Error('must not substitute link time');}}});
+ assert.deepEqual(await (await invoke(request('/snaptrade/status'))).json(),{last_synced_at:'2026-10-15 18:00:00'});
+});
