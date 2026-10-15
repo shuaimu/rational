@@ -41,7 +41,7 @@ Deno.serve(async request=>{
   const now=Date.now(),dueJobs=await jobs.due(32,now+300000);
   const runnable=await lanes.runnable(dueJobs,now+300000,{draining:RUNTIME_MODE==='draining'});
   const candidates=runnable.filter(row=>row.body.dueAt<=now&&row.body.leaseUntil<=now).slice(0,1);
-  let processed=0,progressed=false,pending=[...new Map([...dueJobs,...runnable].map(row=>[row.body.id,row])).values()];
+  let processed=0,progressed=false,failedJobId=null,pending=[...runnable];
 
   for(const candidate of candidates){
    const repository=new PortfolioRepository({documents,domain}),artifacts=new Artifacts(()=>documents('robinlab_inputs')),cache=new PriceCache(documents);
@@ -49,10 +49,11 @@ Deno.serve(async request=>{
    const providerLog=new ProviderLog(documents),provider=new PriceProvider({twelveKey:Deno.env.get('TWELVE_DATA_API_KEY'),limiter:new ProviderLimiter(()=>documents('robinlab_coordination')),record:value=>providerLog.record(value),domain});
    const worker=new JobWorker({jobs,repository,uploads:new UploadStore(()=>documents('robinlab_uploads')),artifacts,domain,broker,cache,reports:new CacheReports({cache,artifacts,domain}),maintenance:new CacheMaintenance({cache,artifacts,domain,provider,repository}),lanes,parseWorkbook:parse_workbook,snaptradeCapture:new SnapTradeCapture({repository,artifacts,broker,cache,domain})});
    const result=await worker.run(candidate.body.id,run);processed++;progressed=!!result&&!result.body.error&&result.body.generation>candidate.body.generation;
+   if(result?.body.error)failedJobId=candidate.body.id;
    pending=pending.filter(row=>row.body.id!==candidate.body.id);
    if(result&&['queued','retry','running','committing'].includes(result.body.state))pending.push(result);
   }
   if(!processed)await new ArtifactCleanup({jobs,uploads:new UploadStore(()=>documents('robinlab_uploads')),artifacts:new Artifacts(()=>documents('robinlab_inputs'))}).step();
-  return Response.json(continuationResponse({processed,cleanup,progressed,pending}));
+  return Response.json(continuationResponse({processed,cleanup,progressed,pending,failedJobId}));
  }catch(error){console.error(JSON.stringify({event:'dispatch_unavailable',type:error?.name,status:error?.status,code:error?.code,requestId:error?.requestId}));return Response.json({error:'Job dispatch is unavailable'},{status:503});}
 });

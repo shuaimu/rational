@@ -86,3 +86,8 @@ commands or create financial test writes just to close the checklist.
 - [x] 12.1 Add bounded durable scheduler continuations in Mako Cloud, with atomic enqueue, pause/overlap protection, hourly fallback and focused tests.
 - [x] 12.2 Request continuations for runnable investment work, recapture stale unpublished broker inputs, and persist truthful capture/success times without changing daily admission or financial idempotency.
 - [ ] 12.3 Deploy the platform and investment fixes, observe a real broker publication and verify the hosted Brokers timestamp.
+
+Deployment verification found an additional transport mismatch: the gateway waited
+30 seconds although the runtime supports longer invocations. Align the runtime
+transport and scheduler lease/timeout ceilings before completing task 12.3; retain
+the application worker limits and daily/hourly cadence.
