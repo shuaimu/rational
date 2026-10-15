@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { snaptradeApi, accountsApi } from '../api/client';
+import { savedBrokerStatus } from '../api/broker-status';
+import { ApiRequestError } from '../api/http';
 import type { SnapTradeImportResult } from '../api/types';
 
 function errMsg(e: unknown): string {
@@ -13,7 +15,7 @@ function relativeTime(d: Date): string {
   if (s < 45) return 'just now';
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return d.toLocaleString();
+  return `${Math.floor(s / 86400)}d ago`;
 }
 
 function syncDate(value: string | null | undefined): Date | null {
@@ -60,10 +62,14 @@ export function SnapTrade() {
 
   const robinAccounts = useQuery({ queryKey: ['accounts'], queryFn: accountsApi.list });
 
-  // Persisted last-sync time (reflects the hourly background syncs + prior sessions).
+  // Load persisted sync status on entry, independently of brokerage discovery.
   const statusQuery = useQuery({
     queryKey: ['snaptrade-status'],
     queryFn: snaptradeApi.status,
+    initialData: () => savedBrokerStatus()?.status,
+    initialDataUpdatedAt: () => savedBrokerStatus()?.checkedAt,
+    refetchOnMount: 'always',
+    retry: false,
     refetchInterval: 60_000,
   });
 
@@ -93,7 +99,7 @@ export function SnapTrade() {
     onSuccess: (data, apply) => {
       setImportResult(data);
       setImportMode(apply ? 'apply' : 'preview');
-      if (apply) {
+      if (apply && data.applied) {
         setLastSyncedAt(new Date());
         queryClient.invalidateQueries();
       }
@@ -102,10 +108,12 @@ export function SnapTrade() {
 
   const accounts = accountsQuery.data ?? [];
 
-  // Prefer a just-happened in-session sync; else the persisted time from the
-  // backend. Retain explicit timezones and interpret legacy unzoned values as UTC.
+  // Retain explicit timezones and interpret legacy unzoned values as UTC.
+  // A later background sync can supersede an in-session manual sync.
   const persistedSyncedAt = syncDate(statusQuery.data?.last_synced_at);
-  const displaySyncedAt = lastSyncedAt ?? persistedSyncedAt;
+  const displaySyncedAt = lastSyncedAt && persistedSyncedAt
+    ? new Date(Math.max(lastSyncedAt.getTime(), persistedSyncedAt.getTime()))
+    : persistedSyncedAt ?? lastSyncedAt;
 
   const btn =
     'inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed';
@@ -114,7 +122,36 @@ export function SnapTrade() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Brokers (SnapTrade)</h1>
+      <div className="space-y-2">
+        <h1 className="text-2xl font-bold text-gray-900">Brokers (SnapTrade)</h1>
+        <p className="text-sm text-gray-600" role="status">
+          <span className="font-medium text-gray-900">Last synced: </span>
+          {displaySyncedAt ? (
+            <time dateTime={displaySyncedAt.toISOString()}>
+              {displaySyncedAt.toLocaleString(undefined, { timeZoneName: 'short' })}
+              {' · '}{relativeTime(displaySyncedAt)}
+            </time>
+          ) : statusQuery.isPending ? 'Loading…'
+            : statusQuery.isError || statusQuery.data?.last_synced_at ? 'Unavailable'
+              : 'Never synced'}
+        </p>
+        {statusQuery.isError && (
+          <p className="text-sm text-amber-700">
+            {displaySyncedAt ? 'Showing the last known sync time. ' : ''}
+            {statusQuery.error instanceof ApiRequestError && statusQuery.error.status === 429
+              ? 'Cloud is busy (HTTP 429). Could not refresh sync status.'
+              : errMsg(statusQuery.error)}{' '}
+            <button
+              type="button"
+              className="underline disabled:opacity-50"
+              disabled={statusQuery.isFetching}
+              onClick={() => statusQuery.refetch()}
+            >
+              {statusQuery.isFetching ? 'Retrying…' : 'Retry'}
+            </button>
+          </p>
+        )}
+      </div>
 
       {/* 1. Connect */}
       <div className="bg-white shadow rounded-lg p-6 space-y-4">
@@ -245,7 +282,7 @@ export function SnapTrade() {
           <h3 className="text-lg font-medium text-gray-900">Sync transactions</h3>
           <p className="mt-1 text-sm text-gray-600">
             Pulls new activity for every linked account (from each account's last-synced point),
-            reconstructs option rolls, and imports. Runs automatically in the background too;
+            reconstructs option rolls, and imports. Automatic sync is queued daily;
             use this to sync on demand.
           </p>
         </div>
@@ -278,19 +315,14 @@ export function SnapTrade() {
               'Sync now'
             )}
           </button>
-          {displaySyncedAt && !importMutation.isPending && (
-            <span className="text-xs text-gray-400" title={displaySyncedAt.toLocaleString()}>
-              Last synced {relativeTime(displaySyncedAt)}
-            </span>
-          )}
         </div>
 
         {importMutation.isPending && (
           <div className="flex items-center rounded-md bg-blue-50 p-4 text-sm text-blue-700">
             <Spinner />
             {importMode === 'apply'
-              ? 'Syncing… pulling new activity from your brokers, reconstructing option rolls, and importing. This can take up to a minute. Leaving now just cancels this run — it writes all-or-nothing and is safe to re-run.'
-              : 'Building preview… reading activity from your brokers without writing anything.'}
+              ? 'Sync queued or running in the cloud. Work advances hourly and can take multiple hours or days. You can leave this page; the sync will continue.'
+              : 'Preview queued or running in the cloud. Work advances hourly and continues if you leave this page, without changing your portfolio.'}
           </div>
         )}
 

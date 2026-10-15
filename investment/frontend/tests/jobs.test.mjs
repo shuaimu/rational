@@ -56,8 +56,31 @@ test('background recovery bounds overlapping requests and fairly resumes active 
  const active=Array.from({length:10},(_,i)=>({...queued,id:'j_'+i.toString(16).padStart(64,'0'),state:'running'}));
  jobs.configureJobs({list:async()=>({jobs:[],cursor:null}),get:id=>new Promise(resolve=>{seen.push(id);releases.push(()=>resolve(active.find(job=>job.id===id)));}),cancel:async()=>queued,complete:()=>{}});
  for(const job of active)jobs.trackJob(job);
- jobs.recoverJobs();jobs.recoverJobs();assert.equal(seen.length,4);
+ jobs.recoverJobs();jobs.recoverJobs();assert.equal(seen.length,1);
  for(const release of releases.splice(0))release();await new Promise(resolve=>setImmediate(resolve));
- jobs.recoverJobs();assert.equal(seen.length,8);assert.equal(new Set(seen).size,8);
+ jobs.recoverJobs();assert.equal(seen.length,2);assert.equal(new Set(seen).size,2);
  for(const release of releases.splice(0))release();await new Promise(resolve=>setImmediate(resolve));
+});
+
+test('background recovery does not re-poll an active job within a minute',async()=>{
+ setup();const jobs=await load();let reads=0;
+ const active={...queued,state:'retry'};
+ jobs.configureJobs({list:async()=>({jobs:[],cursor:null}),get:async()=>{reads++;return active;},cancel:async()=>active,complete:()=>{}});
+ const original=Date.now;let now=original();Date.now=()=>now;
+ try{
+  jobs.trackJob(active);jobs.recoverJobs();await new Promise(resolve=>setImmediate(resolve));
+  now+=59_999;jobs.recoverJobs();await new Promise(resolve=>setImmediate(resolve));assert.equal(reads,1);
+  now+=1;jobs.recoverJobs();await new Promise(resolve=>setImmediate(resolve));assert.equal(reads,2);
+ }finally{Date.now=original;}
+});
+
+test('background discovery waits five minutes before rescanning the retained backlog',async()=>{
+ setup();const jobs=await load();let scans=0;
+ jobs.configureJobs({list:async()=>{scans++;return {jobs:[],cursor:null};},get:async()=>queued,cancel:async()=>queued,complete:()=>{}});
+ const original=Date.now;let now=original();Date.now=()=>now;
+ try{
+  jobs.recoverJobs();await new Promise(resolve=>setImmediate(resolve));assert.equal(scans,1);
+  now+=299_999;jobs.recoverJobs();await new Promise(resolve=>setImmediate(resolve));assert.equal(scans,1);
+  now+=1;jobs.recoverJobs();await new Promise(resolve=>setImmediate(resolve));assert.equal(scans,2);
+ }finally{Date.now=original;}
 });

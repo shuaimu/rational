@@ -41,5 +41,10 @@ test('broker discovery, linking and personal registration use private domain rec
  const registered=await invoke(request('/snaptrade/register',{method:'POST',body:{},key:'broker_register_0001'}));assert.equal(registered.status,200);assert.equal((await registered.json()).mode,'personal');
  const loaded=await f.repository().load();assert.equal(loaded.dataset.private.snaptrade_accounts[0].account_id,1);assert.equal(loaded.dataset.private.snaptrade_users.length,0);
  const status=await invoke(request('/snaptrade/status'));assert.deepEqual(await status.json(),{last_synced_at:'2026-09-26 00:00:00'});
+ const {PortfolioRepository}=await import('../shared/repository.js');
+ const metadata=new PortfolioRepository({documents:collection=>{assert.notEqual(collection,'portfolio_public','status must not read transaction history');return f.documents(collection);},domain});
+ assert.deepEqual(await metadata.brokerAccounts(),loaded.dataset.private.snaptrade_accounts);
+ const statusOnly=createApi({authorize:async()=>{},repository:metadata,domain,broker});
+ assert.deepEqual(await (await statusOnly(request('/snaptrade/status'))).json(),{last_synced_at:'2026-09-26 00:00:00'});
  assert.equal((await invoke(request('/snaptrade/connect'))).status,200);
 });

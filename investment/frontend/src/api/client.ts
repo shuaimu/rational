@@ -1,4 +1,5 @@
 import { uploadWorkbook } from './uploads';
+import { fetchBrokerStatus } from './broker-status';
 import { api, isCloudApi } from './http';
 import type {
   Account,
@@ -138,8 +139,7 @@ export const importApi = {
 };
 
 export const snaptradeApi = {
-  status: () =>
-    api.get<{ last_synced_at: string | null }>('/snaptrade/status').then((res) => res.data),
+  status: fetchBrokerStatus,
   register: () => api.post<SnapTradeRegisterResult>('/snaptrade/register').then((res) => res.data),
   connect: (broker?: string) =>
     api.get<{ redirect_uri: string }>('/snaptrade/connect', { params: broker ? { broker } : {} }).then((res) => res.data),

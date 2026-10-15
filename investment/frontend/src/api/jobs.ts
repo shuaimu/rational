@@ -24,8 +24,9 @@ let transport: { list: (cursor: string | null) => Promise<{ jobs: CloudJob[]; cu
 let discovery: Promise<void> | null = null;
 let nextDiscovery = 0;
 const recoveryOrder = new Map<string, number>();
+const nextRecovery = new Map<string, number>();
 let recoverySequence = 0;
-const recoveryConcurrency = 4;
+const recoveryConcurrency = 1;
 export function configureJobs(value: typeof transport) { transport = value; }
 export const subscribeJobs = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 export const getJobs = () => snapshot;
@@ -81,7 +82,8 @@ export async function waitForJob(job: CloudJob, command?: JobCommand): Promise<{
     const current = await refreshJob(job.id);
     if (current.state === 'completed' && current.result) return { ...current.result, resumePath: snapshot.find(row => row.id === job.id)?.resumePath };
     if (terminal(current.state)) throw new JobFailure(current.state);
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Queued/checkpointed work advances on the hourly cloud dispatcher.
+    await new Promise(resolve => setTimeout(resolve, ['queued', 'retry'].includes(current.state) ? 60_000 : 5000));
   }
 }
 export async function cancelJob(id: string) { trackJob(await transport.cancel(id)); }
@@ -89,13 +91,13 @@ export function dismissJob(id: string) {
   const job = snapshot.find(row => row.id === id);
   if (!job || !terminal(job.state) || job.waitingForSync) return;
   if (job.command) transport.complete(job.command);
-  snapshot = snapshot.filter(row => row.id !== id); recoveryOrder.delete(id); persist();
+  snapshot = snapshot.filter(row => row.id !== id); recoveryOrder.delete(id); nextRecovery.delete(id); persist();
 }
 export function recoverJobs() {
   let scope: string; try { scope = requireOwnerScope(); } catch { return; }
   openScope(scope);
   if (!discovery && Date.now() >= nextDiscovery) {
-    nextDiscovery = Date.now() + 60_000;
+    nextDiscovery = Date.now() + 300_000;
     discovery = (async () => {
       let cursor: string | null = null;
       do {
@@ -106,19 +108,20 @@ export function recoverJobs() {
       } while (cursor);
     })().catch(() => { /* Retry discovery after reconnect; known jobs remain. */ }).finally(() => { discovery = null; });
   }
-  // Discovery refreshes queued background work in pages. Poll only active work
+  // Five-minute discovery refreshes queued background work in pages. Poll only active work
   // and this device's commands individually; a migrated backlog must not create
   // hundreds of simultaneous function/auth requests on every timer tick.
-  const candidates = snapshot.filter(job => !inflight.has(job.id) && (
+  const candidates = snapshot.filter(job => !inflight.has(job.id) && Date.now() >= (nextRecovery.get(job.id) ?? 0) && (
     job.waitingForSync || job.state === 'completed' && !job.settled ||
     !terminal(job.state) && (job.state !== 'queued' || job.command)
   )).sort((a, b) => (recoveryOrder.get(a.id) ?? 0) - (recoveryOrder.get(b.id) ?? 0));
   for (const job of candidates.slice(0, Math.max(0, recoveryConcurrency - inflight.size))) {
     recoveryOrder.set(job.id, ++recoverySequence);
+    nextRecovery.set(job.id, Date.now() + 60_000);
     void refreshJob(job.id).catch(() => { /* Preserve recovery identity for the next bounded retry. */ });
   }
 }
 onClearProtectedState(async nextScope => {
   for (const name of Object.keys(localStorage)) if (name.startsWith(prefix) && name !== (nextScope ? key(nextScope) : '')) localStorage.removeItem(name);
-  currentScope = ''; snapshot = []; nextDiscovery = 0; recoveryOrder.clear(); recoverySequence = 0; emit();
+  currentScope = ''; snapshot = []; nextDiscovery = 0; recoveryOrder.clear(); nextRecovery.clear(); recoverySequence = 0; emit();
 });

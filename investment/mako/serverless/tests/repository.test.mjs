@@ -40,3 +40,10 @@ test('corrupt immutable content fails closed before any mutation',async()=>{
  f.state.rows.get(`portfolio_public:${head.body.public_root.id}`).body.payload+=' ';
  await assert.rejects(()=>f.repository().load());assert.equal(f.state.writes,0);
 });
+test('broker status reads only private metadata and rejects a corrupt private manifest',async()=>{
+ const f=await fixture(),head=await f.repository().head();
+ f.state.rows.get(`portfolio_public:${head.body.public_root.id}`).body.payload+=' ';
+ assert.deepEqual(await f.repository().brokerAccounts(),[]);
+ f.state.rows.get(`portfolio_private:${head.body.private_root.id}`).body.payload+=' ';
+ await assert.rejects(()=>f.repository().brokerAccounts());assert.equal(f.state.writes,0);
+});

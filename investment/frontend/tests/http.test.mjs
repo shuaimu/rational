@@ -15,3 +15,9 @@ test('a signed-out owner cannot send the delayed retry',async()=>{
  api.defaults.adapter=async config=>{calls++;globalThis.httpFixture.scope='different-owner';throw busy(config);};
  await assert.rejects(api.get('/accounts'),/session changed/);assert.equal(calls,1);
 });
+test('status reads surface cloud busy immediately without hidden backoff retries',async()=>{
+ const {api,readStatus}=await load();let calls=0;
+ api.defaults.adapter=async config=>{calls++;throw busy(config);};
+ await assert.rejects(readStatus('/snaptrade/status',new AbortController().signal),error=>error.status===429);
+ assert.equal(calls,1);
+});

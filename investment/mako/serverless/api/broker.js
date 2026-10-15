@@ -12,7 +12,7 @@ export async function brokerRoute({request,path,query,repository,domain,broker,j
  const respond=outcome=>outcome.job?reply(jobs.status(outcome.job),202):reply(outcome.result.response,200,outcome.result.version);
  const command=()=>{const id=request.headers.get('idempotency-key');ensure(id,400,'Idempotency-Key is required');return id;};
  if(path==='/snaptrade/status'&&request.method==='GET') {
-  const {dataset}=await repository.load(),dates=dataset.private.snaptrade_accounts.filter(a=>a.account_id!==null&&a.updated_at!==null).map(a=>a.updated_at).sort();return reply({last_synced_at:dates.at(-1)??null});
+  const accounts=await repository.brokerAccounts(),dates=accounts.filter(a=>a.account_id!==null&&a.updated_at!==null).map(a=>a.updated_at).sort();return reply({last_synced_at:dates.at(-1)??null});
  }
  if(path==='/snaptrade/connect'&&request.method==='GET') {
   const {dataset}=await repository.load(),result=await broker.connect(broker.user(dataset),query.get('broker'));

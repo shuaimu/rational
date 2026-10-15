@@ -2,13 +2,13 @@ import makoConfig from './mako-config.json';
 import { isCloudApi } from './runtime';
 export { isCloudApi } from './runtime';
 import { configureJobs, waitForJob, type CloudJob } from './jobs';
-import axios, { type InternalAxiosRequestConfig } from 'axios';
+import axios, { type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios';
 import { auth, onClearProtectedState, requireOwnerScope, signOut } from './auth';
 import { digest } from './manifest';
 import { getSyncStatus, subscribeSync, waitForVersion } from './rxdb';
 
 type Command = { scope: string; fingerprint: string; id: string };
-type RequestConfig = InternalAxiosRequestConfig & { robinCommand?: Command; robinScope?: string; robinRenewed?: boolean; robinBusyRetries?: number };
+type RequestConfig = InternalAxiosRequestConfig & { robinCommand?: Command; robinScope?: string; robinRenewed?: boolean; robinBusyRetries?: number; robinRetryBusy?: boolean };
 const prefix = 'robinlab.commands.';
 const journalKey = (scope: string) => prefix + encodeURIComponent(scope);
 type Pending = { id: string; acceptedVersion?: number };
@@ -34,6 +34,11 @@ async function requestBody(data: unknown): Promise<unknown> {
 }
 export class ApiRequestError extends Error { status?: number; constructor(message: string, status?: number) { super(message); this.status = status; this.name = 'ApiRequestError'; } }
 export const api = axios.create({ baseURL: isCloudApi ? `${makoConfig.endpoint}/${makoConfig.projectId}--${makoConfig.environmentId}/functions/v1/robinlab-api` : '/api', timeout: isCloudApi ? 30_000 : 180_000 });
+// Small status reads surface busy responses immediately; the UI owns their retry.
+export function readStatus<T>(url: string, signal: AbortSignal) {
+  const config: AxiosRequestConfig & { robinRetryBusy: boolean } = { signal, robinRetryBusy: false };
+  return api.get<T>(url, config);
+}
 api.interceptors.request.use(async (request: RequestConfig) => {
   const scope = requireOwnerScope();
   request.robinScope = scope;
@@ -78,7 +83,7 @@ api.interceptors.response.use(async (response) => {
 }, async (error: unknown) => {
   if (!axios.isAxiosError(error)) throw error;
   const request = error.config as RequestConfig | undefined;
-  if (isCloudApi && error.response?.status === 429 && request && (request.robinBusyRetries ?? 0) < 4) {
+  if (isCloudApi && error.response?.status === 429 && request && request.robinRetryBusy !== false && (request.robinBusyRetries ?? 0) < 4) {
     const scope = request.robinScope;
     const attempt = request.robinBusyRetries = (request.robinBusyRetries ?? 0) + 1;
     const retryAfter = error.response.headers['retry-after'];

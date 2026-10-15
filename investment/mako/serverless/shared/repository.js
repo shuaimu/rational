@@ -64,6 +64,33 @@ export class PortfolioRepository {
     const dataset=this.domain({action:'decode',public:publicBranch,private:privateBranch});
     return {head,dataset};
   }
+  // Status reads need broker metadata, not the full public transaction graph.
+  // Pin one head and verify every traversed manifest/selected partition by hash.
+  async brokerAccounts() {
+    const head=await this.head(),queue=[{ref:head.body.private_root,depth:0}],seen=new Set(),rows=[];
+    let bytes=0;
+    const visit=ref=>{ensure(!seen.has(ref.id)&&seen.size<8192);seen.add(ref.id);bytes+=ref.bytes;ensure(bytes<=64*1024*1024);};
+    while(queue.length) {
+      const {ref,depth}=queue.shift();ensure(depth<=16);visit(ref);
+      const {value:manifest}=await this.verified('private',ref,'m');
+      ensure(manifest.format===1&&manifest.visibility==='private'&&Array.isArray(manifest.children)&&manifest.children.length<=16);
+      for(const child of manifest.children) {
+        if(child.kind==='manifest')queue.push({ref:child.content,depth:depth+1});
+        else {
+          ensure(child.kind==='partition'&&['snaptrade_accounts','snaptrade_users'].includes(child.table)&&typeof child.bucket==='string');
+          if(child.table!=='snaptrade_accounts')continue;
+          visit(child.content);
+          const {value:part}=await this.verified('private',child.content,'p');
+          ensure(part.format===1&&part.table===child.table&&part.bucket===child.bucket&&Array.isArray(part.rows));
+          for(const row of part.rows) {
+            ensure(row&&(row.account_id===null||Number.isSafeInteger(row.account_id))&&(row.updated_at===null||typeof row.updated_at==='string'));
+            rows.push(row);
+          }
+        }
+      }
+    }
+    return rows;
+  }
   history(head) {return {head,ref:head.body.command,sequence:head.body.sequence,seen:[],result:null};}
   async historyPage(state,identity,limit=24) {
     const {head}=state;const seen=new Set(state.seen);

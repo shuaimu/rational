@@ -125,3 +125,21 @@ consuming single-dispatch slots while the two lane owners made little progress.
 Select runnable lane owners directly alongside the bounded due page, skipping
 blocked waiters without incrementing their attempts. Preserve accepted jobs and
 checkpoints; verify fairness and recovery before source quiescence.
+
+### Post-cutover API backpressure correction (October 15)
+
+The live runtime returned HTTP 429 `internal` / `function concurrency limit was
+reached`: the API deployment allowed two in-flight requests while one page could
+issue four job-recovery reads plus paged discovery and foreground reads. This is
+a function concurrency cap, not the earlier replication quota. Avoid loading the complete public portfolio for a status timestamp: pin the head
+and traverse hash-verified private manifests/account partitions only. Raise only
+the API deployment concurrency to 16; retain worker concurrency 1, daily admission,
+hourly dispatch, owner authentication, credentials and other resource limits.
+Bound browser recovery to one in-flight read per tab with a one-minute cooldown
+per job, scan pending jobs every five minutes, and poll explicitly awaited
+queued/retry jobs at one-minute intervals. Preserve every accepted identity.
+
+Brokers status must retain its last successful owner-scoped value across reloads,
+clear it with protected state, show a refresh error alongside stale data, and
+bound status reads including authentication to 15 seconds. These small reads
+surface HTTP 429 directly; write idempotency/backoff behavior remains unchanged.

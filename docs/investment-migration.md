@@ -35,7 +35,7 @@ unchanged household functions/schedules. The combined site is published at
 transactions, positions and performance; shared sign-in and deep-link reloads
 passed. The reviewed browser Wasm bundle is tracked for clean CI builds.
 
-Destination API/jobs versions 4/4 are active, with exactly one Investment
+Destination API/jobs versions 6/4 are active, with exactly one Investment
 dispatcher running hourly (`0 * * * *`, UTC). Automatic brokerage and price
 refresh admission is daily, with shared UTC-day identities for API and scheduled
 quotes. Previously accepted hourly jobs retain their identities and checkpoints.
@@ -378,3 +378,18 @@ normal operation. Its runtime validation is still pinned to the source environme
 and the generated destination config deliberately contains no worker identity.
 Starting it against the destination requires a separate reviewed provisioning and
 configuration change; `cargo run` is not a destination rollback procedure.
+
+### October 15: foreground API recovery
+
+Browser evidence identified HTTP 429 `internal` / `function concurrency limit was
+reached`, distinct from replication quotas. API version 6 raises invocation
+concurrency from 2 to 16 and serves sync status from verified private brokerage
+metadata without traversing public transaction history. Jobs version 4 and the
+one hourly dispatcher remain unchanged. Browser background recovery now uses one
+individual request at a time, a minute between reads of the same job and five
+minutes between full discovery scans. Accepted commands and checkpoints remain.
+
+The Brokers page keeps owner-scoped last-known status across reloads, clears it
+with protected state, and bounds fresh reads to 15 seconds with an explicit
+error on cloud failure. Private deployment and verification receipts are in
+`.local/integration/cloud-429-20261015/`.

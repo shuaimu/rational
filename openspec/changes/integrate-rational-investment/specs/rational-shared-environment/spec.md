@@ -85,3 +85,18 @@ The destination investment dispatcher SHALL run once per hour and admit at most 
 #### Scenario: Existing pending work
 - **WHEN** the schedule changes from every minute to every hour
 - **THEN** accepted jobs retain their original identities and checkpoints and progress in bounded hourly phases without a local runtime
+
+### Requirement: Foreground status remains usable during background recovery
+The investment API SHALL admit ordinary foreground status reads alongside bounded browser job recovery. Recovery SHALL preserve accepted jobs while limiting one per-job background request per tab at a time, spacing reads of the same job by at least one minute, and spacing full discovery scans by five minutes. The API deployment SHALL allow 16 concurrent invocations while the scheduled worker remains single-concurrency.
+
+#### Scenario: Reload while cloud status is unavailable
+- **WHEN** the owner reloads Brokers after a successful status read and the next cloud request fails
+- **THEN** the last known owner-scoped timestamp remains visible with an explicit error, and the status read stops waiting within 15 seconds
+
+#### Scenario: Owner changes
+- **WHEN** the owner signs out or the application changes identity
+- **THEN** the previous owner's saved sync status is cleared and late responses cannot populate the new owner's cache
+
+#### Scenario: Repeated background recovery ticks
+- **WHEN** a backlog is present and multiple recovery ticks occur
+- **THEN** the browser respects the recovery bounds without cancelling, deleting or rewriting accepted commands

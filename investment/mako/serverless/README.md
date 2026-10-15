@@ -7,7 +7,7 @@ frontend has no localhost API proxy or automatic fallback. Supabase is obsolete.
 ## Deployed runtime
 
 - Destination: Rational environment `env_482f584a064bb6dc32c443f7c746c5af`.
-- `robinlab-api` version 4: owner-authenticated API, scoped storage credentials,
+- `robinlab-api` version 6: owner-authenticated API, scoped storage credentials,
   durable commands, bounded uploads and daily automatic quote admission.
 - `robinlab-jobs` version 4: private scheduler entrypoint, bounded job phases,
   retries, provider rate limits, captured inputs and retention cleanup.
@@ -19,12 +19,22 @@ frontend has no localhost API proxy or automatic fallback. Supabase is obsolete.
 - Previously accepted hourly jobs retain their identities and checkpoints.
   Manual imports retain their own command identities and use the hourly worker.
 - Limits: 5 s CPU, 25 s wall, 256 MiB memory, 1 MiB request and response,
-  API concurrency 2 and worker concurrency 1.
+  API concurrency 16 and worker concurrency 1.
 
 Service and provider secrets reside in Mako secret storage. Public runtime
 identifiers are in `mako/runtime.json`; browser config includes only the public
 project key and expected owner/environment scope. The protected local worker
 session is retained exclusively for native tools and compute rollback.
+
+The Brokers status endpoint reads only hash-verified private brokerage metadata
+from one pinned head, avoiding a full transaction-history load for a timestamp.
+
+The API concurrency was raised from 2 to 16 after live runtime rejections showed
+that ordinary foreground status reads competed with background job recovery.
+The browser now uses one background per-job read at a time, with a minute between
+reads of the same job and five minutes between full discovery scans. Explicitly
+awaited queued/checkpointed jobs poll once per minute. This changes observation
+traffic, not the durable cloud job schedule or accepted commands.
 
 ## Architecture and recovery
 

@@ -62,3 +62,9 @@ commands or create financial test writes just to close the checklist.
 - [x] 8.1 Use shared UTC-day identities for automatic brokerage and quote admission, including API-triggered quotes; verify day boundaries, replay, and legacy-job preservation.
 - [x] 8.2 Deploy the updated API and jobs functions, change the existing destination dispatcher to hourly, and verify live configuration and a bounded hosted run.
 - [x] 8.3 Update current runtime documentation and handoff with the cadence and completion-time tradeoff; publish the reviewed source change.
+
+## 9. Correct foreground API backpressure
+
+- [x] 9.1 Identify the live 429 rejection, raise only API concurrency to 16, serve status from verified private metadata, deploy and verify configuration while retaining worker/schedule settings.
+- [x] 9.2 Bound background discovery/recovery and preserve command identities; persist owner-scoped Brokers status with bounded, explicit error handling.
+- [x] 9.3 Run regression tests, frontend lint/build and live read checks; publish the source/frontend and retain deployment evidence.
