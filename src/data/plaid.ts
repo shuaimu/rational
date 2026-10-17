@@ -1,4 +1,7 @@
 import type { RationalAuth } from "../auth.js";
+import type { AccountMapping, AccountSelection, ProviderAccount } from "../../functions/shared/plaid-mapping.js";
+
+export interface PlaidLinkSession { linkId: string; institution: string; accounts: ProviderAccount[]; mappings?: Pick<AccountMapping, "providerAccountId" | "accountId">[] }
 
 /**
  * Rational's Plaid routes on the `institution-sync` function, from the
@@ -27,13 +30,16 @@ export class PlaidError extends Error {
 export interface PlaidClient {
   /** Whether the deployment holds Plaid credentials; the UI asks before offering. */
   configured(): Promise<boolean>;
+  status(): Promise<{ configured: boolean; environment: "sandbox" | "production" }>;
   linkToken(): Promise<string>;
   exchange(input: {
     readonly publicToken: string;
     readonly householdId: string;
-    readonly accountId: string;
     readonly institution: string;
-  }): Promise<string>;
+  }): Promise<PlaidLinkSession>;
+  pending(householdId: string): Promise<PlaidLinkSession[]>;
+  map(linkId: string, householdId: string, mappings: AccountSelection[]): Promise<string>;
+  sync(linkId: string, householdId: string): Promise<{ pending: boolean; outcome: string }>;
 }
 
 export interface PlaidClientOptions {
@@ -55,12 +61,18 @@ export class MakoPlaidClient implements PlaidClient {
   }
 
   async configured(): Promise<boolean> {
-    const answer = await this.#call<{ configured?: unknown }>("GET", "status", undefined);
-    return answer.configured === true;
+    return (await this.status()).configured;
+  }
+
+  async status(): Promise<{ configured: boolean; environment: "sandbox" | "production" }> {
+    const answer = await this.#call<{ configured?: unknown; environment?: unknown }>("GET", "status", undefined);
+    // Older deployments were sandbox-only. Never interpret missing metadata
+    // as permission to offer real bank linking.
+    return { configured: answer.configured === true, environment: answer.environment === "production" ? "production" : "sandbox" };
   }
 
   async linkToken(): Promise<string> {
-    const answer = await this.#call<{ linkToken?: unknown }>("POST", "link-token", {});
+    const answer = await this.#call<{ linkToken?: unknown }>("POST", "link-token", { mappingVersion: 4 });
     if (typeof answer.linkToken !== "string" || answer.linkToken === "") {
       throw new PlaidError("The institution did not issue a link token.");
     }
@@ -70,14 +82,25 @@ export class MakoPlaidClient implements PlaidClient {
   async exchange(input: {
     readonly publicToken: string;
     readonly householdId: string;
-    readonly accountId: string;
     readonly institution: string;
-  }): Promise<string> {
-    const answer = await this.#call<{ connectionId?: unknown }>("POST", "exchange", input);
-    if (typeof answer.connectionId !== "string" || answer.connectionId === "") {
-      throw new PlaidError("The link was not recorded.");
+  }): Promise<PlaidLinkSession> {
+    const answer = await this.#call<PlaidLinkSession>("POST", "exchange", input);
+    if (typeof answer.linkId !== "string" || !Array.isArray(answer.accounts)) {
+      throw new PlaidError("The link was not recorded. Reload Connections to resume setup.");
     }
-    return answer.connectionId;
+    return answer;
+  }
+
+  async pending(householdId: string): Promise<PlaidLinkSession[]> {
+    return (await this.#call<{ links: PlaidLinkSession[] }>("POST", "pending", { householdId })).links;
+  }
+
+  async map(linkId: string, householdId: string, mappings: AccountSelection[]): Promise<string> {
+    return (await this.#call<{ connectionId: string }>("POST", "map", { linkId, householdId, mappings })).connectionId;
+  }
+
+  async sync(linkId: string, householdId: string): Promise<{ pending: boolean; outcome: string }> {
+    return this.#call("POST", "sync-one", { linkId, householdId });
   }
 
   async #call<T>(method: "GET" | "POST", route: string, body: unknown): Promise<T> {

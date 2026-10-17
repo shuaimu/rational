@@ -50,7 +50,7 @@ function localCli() {
     const candidate = join(root, "node_modules", ".bin", "mako");
     if (existsSync(candidate)) return candidate;
   }
-  return "mako";
+  return "mako-cloud";
 }
 
 const DEFAULTS = {
@@ -77,7 +77,7 @@ const DEFAULTS = {
   "functions-endpoint": process.env.MAKO_FUNCTIONS_ENDPOINT ?? "http://127.0.0.1:8082",
   "function-name": "households",
   "sync-function-name": "institution-sync",
-  "sync-cron": "*/15 * * * *",
+  "sync-cron": "0 * * * *",
   "nightly-function-name": "nightly",
   "nightly-cron": "0 2 * * *",
   "run-key": process.env.MAKO_RATIONAL_RUN_KEY,
@@ -264,6 +264,7 @@ const existingCollections = new Map(
 );
 
 for (const collection of model.collections) {
+  const schemaVersion = collection.schemaVersion ?? model.schemaVersion;
   const existing = existingCollections.get(collection.id);
   if (existing === undefined) {
     log(`creating collection ${collection.id}`);
@@ -276,10 +277,10 @@ for (const collection of model.collections) {
       "--primary-key",
       collection.primaryKey.field,
       "--schema-version",
-      String(model.schemaVersion),
+      String(schemaVersion),
       ...tenant,
     ]);
-  } else if (existing.schemaVersion < model.schemaVersion) {
+  } else if (existing.schemaVersion < schemaVersion) {
     // The model moved and this deployment has not: publish the model's
     // version. Compatibility is the platform's call — a publish that would
     // strand stored documents comes back migration_required and this fails
@@ -287,7 +288,7 @@ for (const collection of model.collections) {
     // model's version, so an upgraded environment and an upgraded app move
     // together; a device holding the old local schema rebuilds its replica.
     log(
-      `publishing schema version ${model.schemaVersion} of ${collection.id} ` +
+      `publishing schema version ${schemaVersion} of ${collection.id} ` +
         `(deployment has ${existing.schemaVersion})`,
     );
     const published = makoJson([
@@ -300,12 +301,12 @@ for (const collection of model.collections) {
       "--primary-key",
       collection.primaryKey.field,
       "--schema-version",
-      String(model.schemaVersion),
+      String(schemaVersion),
       ...tenant,
     ]);
     if (published?.status === "migration_required" || published?.migrationRequired === true) {
       fail(
-        `collection ${collection.id} needs a migration for schema version ${model.schemaVersion}; ` +
+        `collection ${collection.id} needs a migration for schema version ${schemaVersion}; ` +
           "stored documents do not fit the new schema",
       );
     }
@@ -587,6 +588,10 @@ function deploySyncFunction() {
     "accounts",
     "--collection",
     "plaid_items",
+    "--collection",
+    "import_records",
+    "--collection",
+    "taxonomy",
     "--collection",
     "alerts",
     "--operation",

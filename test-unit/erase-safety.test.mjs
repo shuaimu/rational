@@ -64,7 +64,7 @@ test("an open that fails for a reason other than a schema change keeps the local
 });
 
 /** A Mako server that can expire every checkpoint it has issued so far, and rate-limit pushes for a while. */
-function fakeServer({ pushDelayMs = 0 } = {}) {
+function fakeServer({ pushDelayMs = 0, invalidCheckpoint = false } = {}) {
   const seed = { ...transaction("txn_server_seed", { date: "2025-12-01" }), _deleted: false };
   const state = { epoch: 0, pushMode: "accept", accepted: new Map([["transactions", new Map([[seed.id, seed]])]]), resyncs410: 0 };
   const envelope = (code, message, retry) => ({ apiVersion: API_ERROR_VERSION, error: { code, message, requestId: "req_test", retry } });
@@ -81,6 +81,7 @@ function fakeServer({ pushDelayMs = 0 } = {}) {
       const issuedIn = request.checkpoint === null ? null : Number(String(request.checkpoint).split(":")[0]);
       if (issuedIn !== null && issuedIn < state.epoch) {
         state.resyncs410 += 1;
+        if (invalidCheckpoint) return json(envelope("invalid_request", "replication checkpoint or pull request is invalid", { kind: "never" }), 400);
         return json(envelope("checkpoint_expired", "older than the retention window", { kind: "never" }), 410);
       }
       const store = state.accepted.get(collection) ?? new Map();
@@ -136,8 +137,9 @@ async function writeOffline(controller, transport, count) {
   }
 }
 
-test("a full resync pushes every write that never left the device before erasing anything", async () => {
-  const server = fakeServer({ pushDelayMs: 20 });
+for (const invalidCheckpoint of [false, true]) {
+test(`a full resync preserves offline writes after ${invalidCheckpoint ? "invalid" : "expired"} checkpoints`, async () => {
+  const server = fakeServer({ pushDelayMs: 20, invalidCheckpoint });
   const { controller, transport } = await openScope(server.fetch);
   await writeOffline(controller, transport, 30);
 
@@ -157,6 +159,7 @@ test("a full resync pushes every write that never left the device before erasing
   assert.equal(onDevice.length, 31, "the device holds the server's copy: seed plus the thirty it saved");
   await controller.remove();
 });
+}
 
 test("offline writes are never erased while the server is rate-limiting, and sync once the limit lifts", async () => {
   // A device reconnects into a rate limit with its checkpoint expired. RxDB holds the whole replication in

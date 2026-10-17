@@ -31,7 +31,8 @@
       "@mako-cloud/ui/*": [
         "./src/kit/*"
       ]
-    }
+    },
+    "rewriteRelativeImportExtensions": true
   },
   "include": [
     "playwright.config.ts",

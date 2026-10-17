@@ -3,6 +3,7 @@ import {
   createMakoPushOptions,
   type MakoCheckpoint,
   MakoReplicationSignals,
+  MakoReplicationError,
   type MakoResyncReason,
   type NormalizedMakoRxdbClientConfig,
   normalizeMakoRxdbConfig,
@@ -93,10 +94,10 @@ export function startCollectionReplication<Id extends CollectionId>(
   const stream$ = options.stream$ as
     | Observable<RxReplicationPullStreamItem<T, MakoCheckpoint>>
     | undefined;
-  const handler = createMakoPullHandler<T>(makoConfig, auth.client, {
+  const handler = recoverInvalidCheckpoint(createMakoPullHandler<T>(makoConfig, auth.client, {
     fetch,
     ...(checkpoints === undefined ? {} : { checkpoints }),
-  });
+  }));
 
   const replication = replicateRxCollection<T, MakoCheckpoint>({
     replicationIdentifier: `${options.identifier}:${collectionId}`,
@@ -127,6 +128,39 @@ export function startCollectionReplication<Id extends CollectionId>(
       signals.complete();
       await replication.cancel();
     },
+  };
+}
+
+/**
+ * Some older cloud checkpoints are refused as invalid_request rather than
+ * checkpoint_expired. Prove that an initial pull succeeds before requesting
+ * the normal recovery, which saves pending writes before rebuilding the replica.
+ * A malformed initial request must remain an error, never a reset loop.
+ */
+export function recoverInvalidCheckpoint<T>(
+  handler: (checkpoint: MakoCheckpoint | undefined, batchSize: number) => Promise<T>,
+): (checkpoint: MakoCheckpoint | undefined, batchSize: number) => Promise<T> {
+  return async (checkpoint, batchSize) => {
+    try {
+      return await handler(checkpoint, batchSize);
+    } catch (error) {
+      if (
+        checkpoint === undefined ||
+        !(error instanceof MakoReplicationError) ||
+        error.code !== "invalid_request" ||
+        error.status !== 400 ||
+        error.message !== "replication checkpoint or pull request is invalid"
+      ) throw error;
+      // Do not discard data merely because the server said 400. If the same
+      // request without its checkpoint fails, surface that failure unchanged.
+      await handler(undefined, batchSize);
+      throw new MakoReplicationError({
+        code: "checkpoint_expired",
+        message: "The saved sync checkpoint is no longer accepted; rebuilding the local replica.",
+        requestId: error.requestId,
+        retry: { kind: "never" },
+      }, 409);
+    }
   };
 }
 

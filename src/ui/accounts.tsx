@@ -15,7 +15,7 @@ import {
   TableRow,
 } from "@mako-cloud/ui";
 import { Plus } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import type { RationalApp } from "../data/rational.js";
 import type { ScopeSession } from "../data/scope.js";
@@ -70,6 +70,17 @@ export function AccountsScreen({
   currency: string;
 }) {
   const state = useBehavior(app.state$);
+  const [importNotice, setImportNotice] = useState("");
+  useEffect(() => {
+    let active=true;
+    if (app.monarch && state.currentHouseholdId && app.config.mode === "live") void app.monarch.list(state.currentHouseholdId).then(({jobs})=>{
+      if(!active)return;
+      const pending=jobs.filter(job=>!["complete","uploading"].includes(job.state));
+      const unverified=jobs.filter(job=>job.state==="complete").flatMap(job=>job.accounts).filter(account=>!account.verified);
+      setImportNotice(pending.length ? "Imported history is incomplete. Account balances may change until reconciliation finishes; bank linking is blocked for those accounts." : unverified.length ? "Some imported accounts have unverified opening balances. Review their import evidence before relying on totals." : "");
+    }).catch(()=>{if(active)setImportNotice("Import readiness could not be checked. Open Import to retry.");});
+    return()=>{active=false;};
+  },[app,state.currentHouseholdId]);
   const accounts = useQuery(
     session.collection("accounts")?.find({ sort: [{ name: "asc" }] }) ?? null,
   );
@@ -113,6 +124,7 @@ export function AccountsScreen({
 
   return (
     <section aria-labelledby="accounts-title" className="grid gap-6">
+      {importNotice ? <p role="status" className="rounded-md border p-3 text-sm">{importNotice} <a href={routeHash({name:"settings",page:"import"})}>View import progress</a></p> : null}
       <PageHeader
         id="accounts-title"
         title="Accounts"

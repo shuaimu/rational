@@ -40,19 +40,14 @@ import {
   type FiredAlert,
   firedAlerts,
 } from "../shared/alerts.ts";
-import {
-  parseExchange,
-  parseLinkToken,
-  parseSyncPage,
-  plaidConnectionBody,
-  plaidConnectionId,
-  plaidItemBody,
-  removedIds,
-  syncEntries,
-} from "../shared/plaid.ts";
 import { RUN_KEY_HEADER, runKeyMatches } from "../shared/run-key.ts";
+import { parseLinkToken } from "../shared/plaid.ts";
 import { serviceCredential } from "./credential.ts";
 import { statement, transactionId } from "./institution.ts";
+import { MappedPlaid, type PlaidStore } from "./plaid-mapped.ts";
+import { BankOverlap } from "./bank-overlap.ts";
+import { MonarchImport, IMPORT_STORE } from "./monarch-import.ts";
+import type { MonarchManifest, SourceRow } from "../shared/monarch.ts";
 
 declare const Deno: { readonly env: { get(name: string): string | undefined } };
 
@@ -69,7 +64,13 @@ const PLAID_ITEMS = "plaid_items";
  * Hardcoded rather than configurable: the egress allowlist names it, and a
  * URL a function could be talked into changing would hollow that grant out.
  */
-const PLAID_HOST = "https://sandbox.plaid.com";
+function plaidEnvironment(): "sandbox" | "production" {
+  let value: string | undefined;
+  try { value = Deno.env.get("PLAID_ENVIRONMENT"); } catch { return "sandbox"; }
+  if (!value || value === "sandbox") return "sandbox";
+  if (value === "production") return "production";
+  throw new Error("Invalid Plaid environment configuration");
+}
 /** Pages one connection may pull in one run; the cursor carries the rest. */
 const PLAID_PAGE_LIMIT = 10;
 /** How far back each sync asks. Overlap is deliberate: it is what proves the
@@ -85,8 +86,12 @@ export default {
     const group = segments[segments.length - 2] ?? "";
     try {
       if (route === "statement") return institutionRoute(url);
+      if (group === "monarch") return await monarchRoute(request, route);
       if (group === "plaid") {
         if (route === "status" && request.method === "GET") return await plaidStatus(request);
+        if (route === "pending" && request.method === "POST") return await mappedPlaidRoute(request, "pending");
+        if (route === "map" && request.method === "POST") return await mappedPlaidRoute(request, "map");
+        if (route === "sync-one" && request.method === "POST") return await mappedPlaidRoute(request, "sync");
         if (request.method !== "POST") {
           return failure(405, "invalid_request", "plaid routes are POST");
         }
@@ -129,8 +134,9 @@ interface PlaidCredentials {
  */
 function plaidCredentials(): PlaidCredentials | null {
   try {
-    const clientId = Deno.env.get("PLAID_CLIENT_ID") ?? "";
-    const secret = Deno.env.get("PLAID_SECRET") ?? "";
+    const production = plaidEnvironment() === "production";
+    const clientId = Deno.env.get(production ? "PLAID_PRODUCTION_CLIENT_ID" : "PLAID_CLIENT_ID") ?? "";
+    const secret = Deno.env.get(production ? "PLAID_PRODUCTION_SECRET" : "PLAID_SECRET") ?? "";
     return clientId !== "" && secret !== "" ? { clientId, secret } : null;
   } catch {
     return null;
@@ -197,7 +203,7 @@ async function plaidCall(
   path: string,
   payload: JsonObject,
 ): Promise<unknown> {
-  const response = await fetch(`${PLAID_HOST}${path}`, {
+  const response = await fetch(`https://${plaidEnvironment() === "production" ? "production" : "sandbox"}.plaid.com${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -213,7 +219,9 @@ async function plaidCall(
         ? String((body as { error_code: unknown }).error_code).slice(0, 64)
         : "unknown";
     console.error(`plaid ${path} refused: status ${response.status} code ${code}`);
-    throw new RouteError(502, "institution_error", `the institution refused ${path}`);
+    const error = new RouteError(502, "institution_error", `the institution refused ${path} (${code})`);
+    Object.assign(error, { providerCode: code });
+    throw error;
   }
   return body;
 }
@@ -221,11 +229,15 @@ async function plaidCall(
 /** Whether this deployment can talk to Plaid at all; the UI asks before offering. */
 async function plaidStatus(request: Request): Promise<Response> {
   await memberOf(request);
-  return Response.json({ configured: plaidCredentials() !== null });
+  return Response.json({ configured: plaidCredentials() !== null, environment: plaidEnvironment(), mappingVersion: 4 });
 }
 
 async function plaidLinkToken(request: Request): Promise<Response> {
   const member = await memberOf(request);
+  const input = await request.json().catch(() => null) as { mappingVersion?: unknown } | null;
+  if (input?.mappingVersion !== 4) {
+    return failure(409, "client_update_required", "This version of Rational cannot create bank accounts safely. Use the updated Rational app before linking a bank.");
+  }
   const credentials = plaidCredentials();
   if (credentials === null) {
     return failure(503, "not_configured", "Plaid is not configured for this deployment");
@@ -236,6 +248,7 @@ async function plaidLinkToken(request: Request): Promise<Response> {
     country_codes: ["US"],
     user: { client_user_id: member.userId },
     products: ["transactions"],
+    transactions: { days_requested: 730 },
   });
   return Response.json({ linkToken: parseLinkToken(answer) });
 }
@@ -247,108 +260,48 @@ async function plaidLinkToken(request: Request): Promise<Response> {
  * anything -- and the response carries the connection id and nothing else.
  */
 async function plaidExchange(request: Request): Promise<Response> {
+  return mappedPlaidRoute(request, "exchange");
+}
+
+async function mappedPlaidRoute(request: Request, action: "exchange" | "pending" | "map" | "sync"): Promise<Response> {
   const member = await memberOf(request);
-  const credentials = plaidCredentials();
-  if (credentials === null) {
-    return failure(503, "not_configured", "Plaid is not configured for this deployment");
-  }
-  let body: JsonObject;
-  try {
-    body = (await request.json()) as JsonObject;
-  } catch {
-    throw new RouteError(400, "invalid_request", "a JSON body is required");
-  }
-  const publicToken = typeof body.publicToken === "string" ? body.publicToken : "";
+  const body = await request.json() as Record<string, unknown>;
   const householdId = typeof body.householdId === "string" ? body.householdId : "";
-  const accountId = typeof body.accountId === "string" ? body.accountId : "";
-  const institution =
-    typeof body.institution === "string" && body.institution !== ""
-      ? body.institution.slice(0, 200)
-      : "Plaid";
-  if (publicToken === "" || householdId === "" || accountId === "") {
-    throw new RouteError(
-      400,
-      "invalid_request",
-      "publicToken, householdId, and accountId are required",
-    );
-  }
   requireWriter(member, householdId);
-  // The account must be the household's own: without this, an editor of one
-  // household could pour an institution's transactions into another's books.
-  const reason = `plaid link for household ${householdId}`;
-  const account = await read(reason, ACCOUNTS, accountId);
-  if (account === null || account._deleted || account.body.household_id !== householdId) {
-    throw new RouteError(403, "forbidden", "the account does not belong to that household");
+  const credentials = plaidCredentials();
+  if (!credentials) return failure(503, "not_configured", "Plaid is not configured");
+  const mapped = mappedClient(credentials);
+  try {
+    if (action === "exchange") return Response.json(await mapped.exchange(String(body.publicToken ?? ""), householdId, String(body.institution ?? "Plaid")));
+    if (action === "pending") return Response.json({ links: await mapped.pending(householdId) });
+    if (action === "map") return Response.json({ connectionId: await mapped.map(String(body.linkId ?? ""), householdId, body.mappings) });
+    return Response.json(await mapped.sync(String(body.linkId ?? ""), householdId, true));
+  } catch (error) {
+    if (error instanceof RouteError) throw error;
+    return failure(400, "link_setup_failed", error instanceof Error ? error.message : "The bank link could not be completed.");
   }
+}
 
-  const exchanged = parseExchange(
-    await plaidCall(credentials, "/item/public_token/exchange", { public_token: publicToken }),
-  );
-  const connectionId = plaidConnectionId(exchanged.itemId);
-  const now = Date.now();
-
-  // The item first: a connection without its item is a link that cannot sync,
-  // but an item without its connection is only an orphan a relink absorbs.
-  const existingItem = await read(reason, PLAID_ITEMS, connectionId);
-  if (existingItem === null || existingItem._deleted) {
-    await write(
-      reason,
-      PLAID_ITEMS,
-      connectionId,
-      plaidItemBody({
-        connectionId,
-        householdId,
-        itemId: exchanged.itemId,
-        accessToken: exchanged.accessToken,
-        cursor: "",
-        now,
-      }),
-      null,
-    );
-  } else {
-    // A relink of the same item keeps its cursor: history already imported
-    // does not need importing again.
-    await write(
-      reason,
-      PLAID_ITEMS,
-      connectionId,
-      { ...existingItem.body, access_token: exchanged.accessToken, updated_at: now },
-      existingItem.revision,
-    );
-  }
-
-  const existingConnection = await read(reason, CONNECTIONS, connectionId);
-  if (existingConnection === null || existingConnection._deleted) {
-    await write(
-      reason,
-      CONNECTIONS,
-      connectionId,
-      plaidConnectionBody({
-        connectionId,
-        householdId,
-        accountId,
-        itemId: exchanged.itemId,
-        institutionName: institution,
-        now,
-      }),
-      null,
-    );
-  } else {
-    await write(
-      reason,
-      CONNECTIONS,
-      connectionId,
-      {
-        ...existingConnection.body,
-        status: "connected",
-        account_id: accountId,
-        institution,
-        updated_at: now,
-      },
-      existingConnection.revision,
-    );
-  }
-  return Response.json({ connectionId });
+function syncStore(reason: string): PlaidStore {
+  return {
+    read: (collection, id) => read(reason, collection, id),
+    write: (collection, id, body, revision) => write(reason, collection, id, body, revision),
+    remove: (collection, document) => removeDocument(reason, collection, String(document.body.id), document),
+    async list(collection, field, value) {
+      const documents: FunctionDocument[] = [];
+      let cursor: string | null = null;
+      for (let page = 0; page < 1000; page++) {
+        const result = await service(reason).documents(collection).query({ predicates: [{ field, operator: "eq", value }], sort: [], cursor, limit: 200 });
+        documents.push(...result.documents);
+        cursor = result.nextCursor ?? null;
+        if (cursor === null) return documents;
+      }
+      throw new Error("The account ledger is too large for this sync phase.");
+    },
+  };
+}
+function mappedClient(credentials: PlaidCredentials): MappedPlaid {
+  return new MappedPlaid(syncStore("mapped Plaid account synchronization"), (path, body) => plaidCall(credentials, path, body), plaidEnvironment());
 }
 
 /** The simulated bank, on its own route. */
@@ -379,8 +332,14 @@ interface SyncOutcome {
  * saying why.
  */
 async function sync(request: Request): Promise<Response> {
+  const importOutcomes = await advanceImports();
+  const continuation = importOutcomes.some(job=>["validating","importing","reconciling"].includes(job.state)) ? { makoContinuation:{delaySeconds:5} } : {};
   const through = todayFrom(request);
   const reason = "scheduled institution sync";
+  if (plaidEnvironment() === "production") {
+    const outcomes = await syncPlaidPass(reason, through);
+    return Response.json({ ok: true, synced: outcomes.length, outcomes, imports:importOutcomes, ...continuation });
+  }
   const connections = await service(reason)
     .documents(CONNECTIONS)
     .query({
@@ -411,7 +370,7 @@ async function sync(request: Request): Promise<Response> {
     }
   }
   outcomes.push(...(await syncPlaidPass(reason, through)));
-  return Response.json({ ok: true, synced: outcomes.length, outcomes });
+  return Response.json({ ok: true, synced: outcomes.length, outcomes, imports:importOutcomes, ...continuation });
 }
 
 /**
@@ -507,14 +466,16 @@ async function syncPlaidPass(reason: string, through: string): Promise<SyncOutco
       limit: 200,
     });
   const outcomes: SyncOutcome[] = [];
+  const started = Date.now();
   const credentials = plaidCredentials();
   for (const document of connections.documents) {
+    if (Date.now() - started > 20_000) break;
     if (document._deleted) continue;
     const connection = document.body;
     if (!syncable(connection)) continue;
     const accountId = typeof connection.account_id === "string" ? connection.account_id : "";
     const householdId = typeof connection.household_id === "string" ? connection.household_id : "";
-    if (accountId === "" || householdId === "") continue;
+    if (householdId === "") continue;
     if (credentials === null) {
       outcomes.push({
         connectionId: String(connection.id),
@@ -527,9 +488,8 @@ async function syncPlaidPass(reason: string, through: string): Promise<SyncOutco
       continue;
     }
     try {
-      outcomes.push(
-        await syncPlaidConnection(document, credentials, { accountId, householdId, through }),
-      );
+      const result = await mappedClient(credentials).sync(String(connection.id), householdId);
+      outcomes.push({ connectionId: String(connection.id), accountId, created: 0, updated: 0, alerted: 0, outcome: result.outcome });
     } catch (error) {
       outcomes.push(await recordFailure(document, { accountId, householdId, through }, error));
     }
@@ -546,115 +506,6 @@ async function syncPlaidPass(reason: string, through: string): Promise<SyncOutco
  * is deleted, not annotated: the institution says it no longer exists, and
  * its replacement arrives in the same page.
  */
-async function syncPlaidConnection(
-  document: FunctionDocument,
-  credentials: PlaidCredentials,
-  target: { accountId: string; householdId: string; through: string },
-): Promise<SyncOutcome> {
-  const reason = `plaid sync for account ${target.accountId}`;
-  const connectionId = String(document.body.id);
-  const item = await read(reason, PLAID_ITEMS, connectionId);
-  if (item === null || item._deleted) {
-    throw new Error("the connection's credentials are gone; relink the institution");
-  }
-  const accessToken = String(item.body.access_token ?? "");
-  const account = await read(reason, ACCOUNTS, target.accountId);
-  const currency =
-    account !== null && typeof account.body.currency === "string" ? account.body.currency : "USD";
-
-  let cursor = typeof item.body.cursor === "string" ? item.body.cursor : "";
-  let created = 0;
-  let updated = 0;
-  let removed = 0;
-  const arrived: AlertTransaction[] = [];
-  for (let pages = 0; pages < PLAID_PAGE_LIMIT; pages += 1) {
-    const page = parseSyncPage(
-      await plaidCall(credentials, "/transactions/sync", {
-        access_token: accessToken,
-        count: 100,
-        ...(cursor === "" ? {} : { cursor }),
-      }),
-    );
-    for (const entry of syncEntries(page, currency)) {
-      const id = transactionId(target.accountId, entry.externalId);
-      const existing = await read(reason, TRANSACTIONS, id);
-      const now = Date.now();
-      // No `reviewed`: what the institution sends has not been looked at, and
-      // the review queue is exactly the imported transactions without the
-      // flag. Setting it false would say the same thing in a way the queue
-      // does not read.
-      const body: JsonObject = {
-        id,
-        household_id: target.householdId,
-        created_at: (existing?.body.created_at as number | undefined) ?? now,
-        updated_at: now,
-        account_id: target.accountId,
-        date: entry.date,
-        amount: entry.amount,
-        currency: entry.currency,
-        description: entry.description,
-        external_id: entry.externalId,
-        tags: [],
-        splits: [],
-      };
-      const arrival: AlertTransaction = {
-        id,
-        account_id: target.accountId,
-        date: entry.date,
-        amount: entry.amount,
-        currency: entry.currency,
-        description: entry.description,
-      };
-      if (existing === null || existing._deleted) {
-        await write(reason, TRANSACTIONS, id, body, null);
-        arrived.push(arrival);
-        created += 1;
-      } else if (
-        existing.body.amount !== entry.amount ||
-        existing.body.date !== entry.date ||
-        existing.body.description !== entry.description
-      ) {
-        await write(reason, TRANSACTIONS, id, body, existing.revision);
-        arrived.push(arrival);
-        updated += 1;
-      }
-    }
-    for (const withdrawnId of removedIds(page)) {
-      const id = transactionId(target.accountId, withdrawnId);
-      const existing = await read(reason, TRANSACTIONS, id);
-      if (existing !== null && !existing._deleted) {
-        await removeDocument(reason, TRANSACTIONS, id, existing);
-        removed += 1;
-      }
-    }
-    // Only now, with the page's writes down, does the cursor move.
-    cursor = page.next_cursor;
-    const current = await read(reason, PLAID_ITEMS, connectionId);
-    if (current !== null && !current._deleted) {
-      await write(
-        reason,
-        PLAID_ITEMS,
-        connectionId,
-        { ...current.body, cursor, updated_at: Date.now() },
-        current.revision,
-      );
-    }
-    if (!page.has_more) break;
-  }
-
-  const alerted = await raiseAlerts(target.householdId, target.through, { arrived });
-  const outcome = `imported ${created}, corrected ${updated}, removed ${removed}`;
-  await recordSync(document, outcome, "connected");
-  return {
-    connectionId,
-    accountId: target.accountId,
-    created,
-    updated,
-    alerted,
-    outcome,
-  };
-}
-
 async function syncConnection(
   document: FunctionDocument,
   target: { accountId: string; externalId: string; householdId: string; through: string },
@@ -849,12 +700,16 @@ async function recordSync(
   );
 }
 
+function syncCredential(): string {
+  try { const key = Deno.env.get("IMPORT_SYNC_SERVICE_KEY"); if (key) return key; } catch { /* older deployments */ }
+  return serviceCredential();
+}
 function service(reason: string): ServiceFunctionClient {
   return createServiceClient({
     endpoint: environment("MAKO_API_URL"),
     projectId: environment("MAKO_PROJECT_ID"),
     environmentId: environment("MAKO_ENVIRONMENT_ID"),
-    serviceCredential: serviceCredential(),
+    serviceCredential: syncCredential(),
     reason,
     // A service request's quota reservation is keyed by its request id, and a
     // reused one is refused as a conflict (findings log #7a), so every call
@@ -884,7 +739,7 @@ async function write(
       mutationId: `rational-sync-${randomSuffix()}${randomSuffix()}`,
       operation: expectedRevision === null ? "create" : "update",
       expectedRevision,
-      schemaVersion: SCHEMA_VERSION,
+      schemaVersion: collectionId === PLAID_ITEMS ? 4 : SCHEMA_VERSION,
       body,
     });
 }
@@ -902,7 +757,7 @@ async function removeDocument(
       mutationId: `rational-sync-${randomSuffix()}${randomSuffix()}`,
       operation: "delete",
       expectedRevision: existing.revision,
-      schemaVersion: SCHEMA_VERSION,
+      schemaVersion: collectionId === PLAID_ITEMS ? 4 : SCHEMA_VERSION,
       body: existing.body,
     });
 }
@@ -957,4 +812,57 @@ function environment(name: string): string {
 
 function failure(status: number, code: string, message: string): Response {
   return Response.json({ error: { code, message } }, { status });
+}
+
+function importer(): MonarchImport { return new MonarchImport(syncStore("Monarch history import")); }
+async function monarchRoute(request: Request, route: string): Promise<Response> {
+  if (request.method !== "POST") return failure(405, "invalid_request", "Monarch routes require POST.");
+  const member = await memberOf(request);
+  if (Number(request.headers.get("content-length") ?? 0) > 300000) return failure(413, "invalid_request", "Upload chunk too large.");
+  const raw = await request.text();
+  if (new TextEncoder().encode(raw).length > 300000) return failure(413, "invalid_request", "Upload chunk too large.");
+  let body: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("object required");
+    body = parsed as Record<string, unknown>;
+  } catch { return failure(400, "invalid_request", "Provide a JSON object for this import operation."); }
+  const householdId = String(body.householdId ?? "");
+  const readOnly=["list","status","source","source-reviews","reviews","account-status"].includes(route);
+  if (readOnly) {
+    if (!["owner","editor","viewer"].includes(member.households[householdId] ?? "")) throw new RouteError(403,"forbidden","This household is not available to your account.");
+  } else requireWriter(member, householdId);
+  if (body.version !== 1) return failure(409, "client_update_required", "Reload Rational before importing Monarch history.");
+  const engine = importer(), id = String(body.id ?? "");
+  try {
+    if (route === "source") return Response.json({ source:await engine.source(householdId, String(body.transactionId ?? "")) });
+    if (route === "source-reviews") return Response.json({ reviews:await engine.sourceReviews(householdId) });
+    if (route === "keep-source") { await engine.keepSource(householdId,id); return Response.json({ ok:true }); }
+    if (route === "reviews") return Response.json({ reviews:await new BankOverlap(syncStore("review bank overlaps")).reviews(householdId) });
+    if (route === "resolve") { await new BankOverlap(syncStore("resolve bank overlap")).resolve(householdId, id, body.transactionId === null ? null : String(body.transactionId ?? "")); return Response.json({ ok:true }); }
+    if (route === "account-status") { await new BankOverlap(syncStore("check import readiness")).requireComplete(String(body.accountId ?? ""), householdId); const marker=await read("account import readiness",IMPORT_STORE,`account_${String(body.accountId ?? "")}`); const state=marker ? JSON.parse(String(marker.body.data)) : null; return Response.json({ ready:true, verified:state?.verified ?? null }); }
+    if (route === "start") return Response.json(await engine.start(householdId, member.userId, body.manifest as MonarchManifest));
+    if (route === "list") return Response.json({ jobs:await engine.list(householdId) });
+    if (route === "upload") { await engine.upload(id, householdId, Number(body.index), body.rows as SourceRow[]); return Response.json({ ok:true }); }
+    if (route === "seal") return Response.json(await engine.seal(id, householdId));
+    if (route === "status") return Response.json(await engine.status(id, householdId));
+    if (route === "advance") return Response.json(await engine.advance(id, householdId));
+    if (route === "cancel") return Response.json(await engine.cancel(id, householdId));
+    if (route === "resume") return Response.json(await engine.resume(id, householdId));
+    return failure(404, "not_found", "Unknown Monarch operation.");
+  } catch (error) { return failure(400, "import_failed", error instanceof Error ? error.message : "Import could not continue."); }
+}
+async function advanceImports(): Promise<{ id:string; state:string }[]> {
+  const deadline = Date.now() + 20000, results: { id:string; state:string }[] = [];
+  for (const state of ["validating", "importing", "reconciling"]) {
+    if (Date.now() >= deadline) break;
+    const page = await service("continue pending Monarch imports").documents(IMPORT_STORE).query({ predicates:[{ field:"state", operator:"eq", value:state }], sort:[], cursor:null, limit:20 });
+    for (const doc of page.documents) {
+      if (Date.now() >= deadline) break;
+      if (doc._deleted || doc.body.kind !== "job") continue;
+      try { const result = await importer().advance(String(doc.body.id), String(doc.body.household_id), 100, deadline); const before=JSON.parse(String(doc.body.data)); const progressed=result.processed!==before.processed || result.state!==before.state || before.state==="reconciling"; results.push({ id:result.id, state:progressed?result.state:"waiting" }); }
+      catch { results.push({ id:String(doc.body.id), state:"retry-required" }); }
+    }
+  }
+  return results;
 }

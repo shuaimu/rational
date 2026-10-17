@@ -439,18 +439,21 @@ export class FakeMakoBackend {
   async #plaid(route: string, init: RequestInit): Promise<Response> {
     const caller = this.#authorize(init);
     if (caller === null) return apiError(401, "unauthenticated", "the session is not valid");
-    if (route === "status") return jsonResponse({ configured: this.plaidConfigured });
+    if (route === "status") return jsonResponse({ configured: this.plaidConfigured, environment: "sandbox", mappingVersion: 2 });
     if (!this.plaidConfigured) {
       return apiError(503, "not_configured", "Plaid is not configured for this deployment");
     }
     if (route === "link-token") return jsonResponse({ linkToken: "link-sandbox-fake-1" });
-    if (route !== "exchange") return apiError(404, "not_found", "route not found");
+    if (route === "pending") return jsonResponse({ links: [] });
+    if (route === "sync-one") return jsonResponse({ pending: false, outcome: "imported 3, corrected 0, removed 0" });
+    if (route !== "exchange" && route !== "map") return apiError(404, "not_found", "route not found");
     const body = await jsonBody<Record<string, unknown>>(init);
     const householdId = typeof body.householdId === "string" ? body.householdId : "";
-    const accountId = typeof body.accountId === "string" ? body.accountId : "";
+    const mapping = Array.isArray(body.mappings) ? body.mappings[0] as { accountId?: string; create?: boolean } | undefined : undefined;
+    const accountId = mapping?.create ? "acc_plaid_fake_everyday" : mapping?.accountId ?? "";
     const publicToken = typeof body.publicToken === "string" ? body.publicToken : "";
     const institution = typeof body.institution === "string" ? body.institution : "Plaid";
-    if (householdId === "" || accountId === "" || publicToken === "") {
+    if (householdId === "" || (route === "exchange" ? publicToken === "" : accountId === "")) {
       return apiError(
         400,
         "invalid_request",
@@ -461,8 +464,15 @@ export class FakeMakoBackend {
     if (role !== "owner" && role !== "editor") {
       return apiError(403, "permission_denied", "only an owner or editor may connect");
     }
+    if (route === "exchange") return jsonResponse({ linkId: "con_plaid-item-fake-1", institution, accounts: [{ id: "provider-everyday", name: "Everyday", mask: "1234", type: "depository", subtype: "checking", currency: "USD", balance: 100000 }] });
     const at = this.#clock;
     const connectionId = "con_plaid-item-fake-1";
+    if (mapping?.create) this.#record("accounts", {
+      id: accountId, household_id: householdId, created_at: at, updated_at: at,
+      name: "Everyday (…1234)", type: "checking", currency: "USD",
+      opening_balance: 100000, opening_date: "2026-08-28", institution: "First Platypus Bank",
+      connection_id: connectionId, external_id: "provider-everyday", _deleted: false,
+    });
     this.#record("connections", {
       id: connectionId,
       household_id: householdId,
@@ -472,7 +482,7 @@ export class FakeMakoBackend {
       status: "connected",
       account_id: accountId,
       external_id: "item-fake-1",
-      institution,
+      institution: "First Platypus Bank",
       last_sync_at: at,
       last_sync_outcome: "imported 3, corrected 0, removed 0",
       _deleted: false,
