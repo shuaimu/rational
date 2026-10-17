@@ -104,6 +104,7 @@ test("a bank export is previewed, deduplicated, categorized by a rule, and impor
   });
 
   await openSettingsPage(page, "Import");
+  await page.getByLabel("Import format").selectOption("bank");
   await expect(page.getByRole("heading", { name: "Import", exact: true })).toBeVisible();
   await page.getByLabel("Account").selectOption({ label: "Everyday" });
   await page.getByLabel("CSV file").setInputFiles({

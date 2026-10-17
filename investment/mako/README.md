@@ -175,6 +175,7 @@ The tool does not publish the head or start writers. Follow final verification a
 publication steps only after `verified-staging.json` reports `complete: true`.
 
 Browser-only replication checks use synthetic data on the isolated port 5174:
-start Vite with `npm run dev -- --host 127.0.0.1 --port 5174 --strictPort`, open
+from `investment/frontend`, start the standalone fixture server with
+`npx vite --host 127.0.0.1 --port 5174 --strictPort`, open
 `http://127.0.0.1:5174/tests/replication.html`, and require all seven checks to pass.
 The harness intercepts cloud requests and refuses to run on the application's port.

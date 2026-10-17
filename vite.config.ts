@@ -2,7 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import tailwindcss from "@tailwindcss/vite";
+import react from "@vitejs/plugin-react";
 import { defineConfig, type ProxyOptions } from "vite";
+import { investmentDev } from "./scripts/investment-dev";
 
 /**
  * Rational is a static site, so the project it talks to is compiled into the
@@ -72,9 +74,7 @@ export default defineConfig(({ command }) => {
               ? "same-origin"
               : (configFile.functionsEndpoint ?? null),
         };
-  const proxy: Record<string, ProxyOptions> = {
-    "^/investment(?:/|$)": { target: "http://127.0.0.1:5174", ws: true },
-  };
+  const proxy: Record<string, ProxyOptions> = {};
   if (liveEndpoint !== undefined) {
     proxy["/v1"] = {
       target: liveEndpoint,
@@ -97,10 +97,13 @@ export default defineConfig(({ command }) => {
   }
   return {
     base: command === "build" ? "/rational/" : "/",
-    plugins: [tailwindcss()],
+    plugins: [investmentDev(), command === "serve" && react(), tailwindcss()],
     // The design system travels with this repository as sources under
     // `src/kit`; its package name resolves there.
     resolve: {
+      dedupe: command === "serve"
+        ? ["react", "react-dom", "@mako-cloud/rxdb", "rxdb", "rxjs", "dexie"]
+        : [],
       alias: {
         "@mako-cloud/ui": fileURLToPath(new URL("./src/kit/index.ts", import.meta.url)),
       },
@@ -108,6 +111,7 @@ export default defineConfig(({ command }) => {
     // Pre-bundled up front rather than on the first request, which would
     // otherwise take a minute cold and reload the page mid-way through a test.
     optimizeDeps: {
+      entries: ["index.html", "investment/frontend/index.html"],
       include: [
         "react",
         "react-dom",
@@ -139,6 +143,12 @@ export default defineConfig(({ command }) => {
         },
       },
     },
-    server: Object.keys(proxy).length === 0 ? {} : { proxy },
+    server: {
+      port: 5173, strictPort: true, proxy,
+      // Deployment journals and build output must not interrupt an in-progress
+      // bank login. Private deployment inputs are never web assets.
+      watch: { ignored: ["**/.local/**", "**/dist/**", "**/web-dist/**", "**/test-results/**", "**/playwright-report/**"] },
+      fs: { deny: [".env", ".env.*", "*.{crt,pem}", "**/.git/**", "**/.local/**"] },
+    },
   };
 });

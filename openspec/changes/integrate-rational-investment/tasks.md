@@ -92,3 +92,16 @@ Deployment verification found an additional transport mismatch: the gateway wait
 transport and scheduler lease/timeout ceilings were aligned, retaining application
 worker limits and daily/hourly cadence. Real publication and browser verification
 completed on October 15 at 20:40:55 UTC (portfolio version 250).
+
+## 13. Simplify local development
+
+- [x] 13.1 Serve both app entry points, investment public assets and hot reload through one root Vite server; remove the port 5174 proxy and delegate legacy dev commands.
+- [x] 13.2 Verify both entry points, navigation/reloads, Wasm and hot updates with the second server stopped; validate production builds and update development instructions.
+
+Development verification: both static builds, root typecheck, Investment lint,
+231 existing unit tests and the new HTTP development integration test passed.
+Chrome verified navigation both ways, Brokers hash-route reload, authenticated
+investment reads, and React hot updates in both source trees with port 5174
+stopped. Four of five targeted household browser tests passed; the dashboard
+net-worth trend assertion also fails with the pre-change Vite configuration
+(expected up/down, received flat). This existing test failure remains separate.

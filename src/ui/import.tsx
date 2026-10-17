@@ -35,6 +35,7 @@ import {
 import { formatMinorUnits } from "../selectors/money.js";
 import { applyRules } from "../selectors/rules.js";
 import { useQuery } from "./hooks.js";
+import { MonarchImportPanel } from "./monarch-import.js";
 import { transactionsHash } from "./router.js";
 
 /**
@@ -75,6 +76,7 @@ export function ImportScreen({
   );
   const transactions = useQuery(session.collection("transactions")?.find() ?? null);
   const rules = useQuery(session.collection("rules")?.find() ?? null);
+  const [mode, setMode] = useState<"bank" | "monarch">("monarch");
   const [filename, setFilename] = useState<string | null>(null);
   const [table, setTable] = useState<CsvTable | null>(null);
   const [mapping, setMapping] = useState<ColumnMapping | null>(null);
@@ -169,6 +171,8 @@ export function ImportScreen({
           A bank's CSV export, previewed before a single row is written.
         </p>
       </div>
+      <Field label="Import format" htmlFor="import-mode"><NativeSelect id="import-mode" value={mode} onChange={event=>setMode(event.target.value as "bank"|"monarch")}><option value="monarch">Monarch history</option><option value="bank">Generic bank CSV</option></NativeSelect></Field>
+      {mode === "monarch" ? <MonarchImportPanel app={app} accounts={accounts} currency={currency}/> : <>
       {problem === null ? null : (
         <Alert variant="destructive">
           <CircleAlert />
@@ -337,6 +341,7 @@ export function ImportScreen({
           </CardFooter>
         </Card>
       )}
+      </>}
     </section>
   );
 }

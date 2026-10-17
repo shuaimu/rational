@@ -1,0 +1,5 @@
+Date,Merchant,Category,Account,Original Statement,Notes,Amount,Tags,Owner,Reviewed,Id
+2026-10-01,"Café, 雪",Food,Monarch import verification,COFFEE STORE,"First line
+Second ""quoted"" line",-5.25,Trip,Synthetic owner,Reviewed,123456789012345678
+2026-10-01,"Café, 雪",Food,Monarch import verification,COFFEE STORE,Legitimate second purchase,-5.25,Trip,Synthetic owner,Needs Review,223456789012345678
+2026-12-24,Future income,Income,Monarch import verification,INCOME,,20,,,,323456789012345678

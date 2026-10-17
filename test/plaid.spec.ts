@@ -118,15 +118,6 @@ test("linking through Plaid lands a connection and its first sync, and no token 
   );
   await settle(page);
   await page.waitForFunction(() => window.rational.writes !== null);
-  await page.evaluate(() =>
-    window.rational.writes?.createAccount({
-      name: "Everyday",
-      type: "checking",
-      currency: "USD",
-      opening_balance: 500_000,
-      opening_date: "2026-01-01",
-    }),
-  );
 
   await openSettingsPage(page, "Connections");
   await expect(page.getByTestId("connections-screen")).toBeVisible();
@@ -135,14 +126,17 @@ test("linking through Plaid lands a connection and its first sync, and no token 
   // configured; a deployment without Plaid credentials never shows this form.
   const plaidForm = page.getByTestId("plaid-connect");
   await expect(plaidForm).toBeVisible();
-  await plaidForm.getByLabel("Account").selectOption({ label: "Everyday" });
   await plaidForm.getByRole("button", { name: "Connect through Plaid" }).click();
+  const matching = page.getByRole("form", { name: "Add First Platypus Bank accounts" });
+  await expect(matching.getByRole("combobox")).toHaveValue("__create__");
+  await matching.getByRole("button", { name: "Add selected accounts" }).click();
 
   // The connection lands with the institution's real name, a connected
   // status, and the first sync's outcome; the imported transactions
   // replicate like any others.
   const row = page.getByTestId("connection-con_plaid-item-fake-1");
   await expect(row).toContainText("First Platypus Bank");
+  await expect(row).toContainText("Everyday (…1234)");
   await expect(row.getByTestId("status")).toHaveText("connected");
   await expect(row).toHaveAttribute("data-status", "connected");
   await expect(row.getByTestId("outcome")).toHaveText("imported 3, corrected 0, removed 0");

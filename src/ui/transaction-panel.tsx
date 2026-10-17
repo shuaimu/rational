@@ -1,3 +1,4 @@
+import { MonarchSource } from "./monarch-source.js";
 import {
   Alert,
   AlertDescription,
@@ -304,6 +305,7 @@ export function TransactionPanel({
                 onCommit={(notes) => void patch({ notes: notes.trim() === "" ? null : notes })}
               />
             </div>
+            <MonarchSource app={app} transactionId={transaction.id}/>
             <fieldset className="m-0 grid min-w-0 gap-2 border-0 p-0">
               <legend className="mb-2 p-0 text-sm font-medium leading-none">Tags</legend>
               {tags.length === 0 ? (

@@ -8,7 +8,7 @@ import {
   CardTitle,
 } from "@mako-cloud/ui";
 import { Download } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import type { RationalApp } from "../data/rational.js";
 import type { ScopeSession } from "../data/scope.js";
@@ -38,6 +38,8 @@ export function DataScreen({
   currency: string;
 }) {
   const state = useBehavior(app.state$);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
   const household =
     state.households.find((candidate) => candidate.id === state.currentHouseholdId) ?? null;
   const accounts = useQuery(session.collection("accounts")?.find() ?? null);
@@ -84,6 +86,7 @@ export function DataScreen({
         else's for a filter to leave out. Amounts are decimal text in each row's own currency — the
         household's is {currency} — and names stand in for ids.
       </p>
+      <Card><CardHeader><CardTitle>Refresh local data</CardTitle><CardDescription>If this device shows stale data, save pending edits and rebuild its household copy from Mako Cloud. Close other Rational tabs on this device first.</CardDescription></CardHeader><CardContent>{refreshError ? <p role="alert">{refreshError}</p> : null}<Button disabled={refreshing || !app.online()} onClick={()=>{setRefreshing(true);setRefreshError("");void app.refreshLocalReplica().catch(error=>setRefreshError(error instanceof Error?error.message:"Refresh failed; local edits were preserved.")).finally(()=>setRefreshing(false));}}>{refreshing?"Refreshing…":"Refresh from cloud"}</Button></CardContent></Card>
       <div className="grid gap-4 md:grid-cols-2">
         <Card data-testid="export-transactions">
           <CardHeader>

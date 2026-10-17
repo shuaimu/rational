@@ -18,6 +18,7 @@ import {
 } from "../model/types.js";
 import { type HouseholdsClient, HouseholdsError, MakoHouseholdsClient } from "./households.js";
 import { MakoPlaidClient, type PlaidClient } from "./plaid.js";
+import { MonarchClient } from "./monarch.js";
 import { Receipts } from "./receipts.js";
 import { makoConfigFor } from "./replication.js";
 import { createReplicationStateStore, ScopeStatePersistence } from "./replication-state.js";
@@ -100,6 +101,7 @@ export class RationalApp {
   readonly #households: HouseholdsClient | null;
   /** The Plaid routes on `institution-sync`, or null without a functions endpoint. */
   readonly plaid: PlaidClient | null;
+  readonly monarch: MonarchClient | null;
   #subscriptions = new Set<Subscription>();
   #directoryWatch: Subscription | null = null;
   #householdWatch: Subscription | null = null;
@@ -128,6 +130,7 @@ export class RationalApp {
             fetch: this.transport.fetch,
           });
     const syncUrl = functionUrl(this.config, "institution-sync");
+    this.monarch = syncUrl === null ? null : new MonarchClient(syncUrl, this.auth, this.transport.fetch);
     this.plaid =
       syncUrl === null
         ? null
@@ -605,6 +608,8 @@ export class RationalApp {
   online(): boolean {
     return this.transport.online && navigator.onLine;
   }
+
+  async refreshLocalReplica(): Promise<void> { await this.#household?.refreshLocalReplica(); }
 
   async waitForSync(): Promise<void> {
     await this.#directory?.awaitInSync();

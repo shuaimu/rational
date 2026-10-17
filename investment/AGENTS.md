@@ -36,7 +36,7 @@ cargo test -p robinlab-core
 
 # Frontend
 cd frontend && npm install
-cd frontend && npm run dev       # investment assets on 5174; use the Rational proxy on 5173/investment/
+cd frontend && npm run dev       # delegates to Rational's single Vite server on 5173
 cd frontend && npm run build     # type-check + production build
 cd frontend && npm run lint      # ESLint
 ```

@@ -353,6 +353,8 @@ export class ScopeController<Ids extends CollectionId> {
     }
   }
 
+  async refreshLocalReplica(): Promise<void> { await this.#fullResync("requested cloud refresh"); }
+
   /** A local write happened; it is pending until the push reports it sent. */
   noteLocalWrite(): void {
     this.#patch((state) => ({ ...state, pendingWrites: state.pendingWrites + 1 }));
@@ -567,6 +569,7 @@ export class ScopeController<Ids extends CollectionId> {
       recovery: { kind: "active" },
       activity: "active",
       initialSynced: false,
+      lastError: null,
     }));
     void session.awaitInitialReplication().then(() => {
       if (this.#session === session) {

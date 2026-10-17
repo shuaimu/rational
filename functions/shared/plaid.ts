@@ -1,3 +1,4 @@
+import { decimalMinor } from "./monarch.ts";
 /**
  * The pure half of Rational's Plaid integration: shapes in, decisions out,
  * no network and no secrets.
@@ -26,6 +27,7 @@ export interface PlaidTransaction {
   readonly name: string;
   readonly merchant_name?: string | null;
   readonly pending: boolean;
+  readonly original_description?: string | null;
 }
 
 export interface PlaidSyncPage {
@@ -34,6 +36,7 @@ export interface PlaidSyncPage {
   readonly removed: readonly { readonly transaction_id: string }[];
   readonly next_cursor: string;
   readonly has_more: boolean;
+  readonly transactions_update_status?: string;
 }
 
 /**
@@ -53,11 +56,11 @@ export interface PlaidEntry {
 /**
  * Plaid's major-unit float, as Rational's minor-unit integer. The sign flips:
  * Plaid's positive is an outflow, and in Rational spending is negative. The
- * rounding guards against float representation (`12.34 * 100 === 1233.9999…`),
- * not against sub-cent amounts, which Plaid does not produce for card feeds.
+ * decimal parser respects each currency's precision and rejects amounts that
+ * cannot be represented exactly instead of silently rounding them.
  */
-export function minorUnitsFromPlaid(amount: number): number {
-  const minor = -Math.round(amount * 100);
+export function minorUnitsFromPlaid(amount: number, currency = "USD"): number {
+  const minor = -decimalMinor(String(amount), currency);
   // A zero amount negates to -0, which is equal to 0 almost everywhere --
   // "almost" being exactly the kind of word a money field cannot carry.
   return minor === 0 ? 0 : minor;
@@ -89,6 +92,7 @@ function asTransaction(value: unknown): PlaidTransaction {
     name: value.name,
     merchant_name: typeof value.merchant_name === "string" ? value.merchant_name : null,
     pending: value.pending === true,
+    original_description: typeof value.original_description === "string" ? value.original_description : null,
   };
 }
 
@@ -120,6 +124,7 @@ export function parseSyncPage(value: unknown): PlaidSyncPage {
     removed,
     next_cursor: value.next_cursor,
     has_more: value.has_more,
+    ...(typeof value.transactions_update_status === "string" ? { transactions_update_status: value.transactions_update_status } : {}),
   };
 }
 
@@ -136,7 +141,7 @@ export function syncEntries(page: PlaidSyncPage, fallbackCurrency: string): read
     byId.set(transaction.transaction_id, {
       externalId: transaction.transaction_id,
       date: transaction.date,
-      amount: minorUnitsFromPlaid(transaction.amount),
+      amount: minorUnitsFromPlaid(transaction.amount, transaction.iso_currency_code ?? fallbackCurrency),
       currency: transaction.iso_currency_code ?? fallbackCurrency,
       description: transaction.merchant_name ?? transaction.name,
     });

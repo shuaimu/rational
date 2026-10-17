@@ -30,4 +30,8 @@ const rootElement = document.querySelector("#root");
 if (rootElement === null) throw new Error("Rational root element is missing");
 createRoot(rootElement).render(<App app={app} />);
 void app.start();
-window.addEventListener("pagehide", () => void app.close());
+// A page retained in the back/forward cache resumes this same app object.
+// Closing it there leaves the restored screen attached to a closed database.
+window.addEventListener("pagehide", (event) => {
+  if (!event.persisted) void app.close();
+});

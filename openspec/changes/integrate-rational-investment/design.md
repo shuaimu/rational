@@ -197,3 +197,12 @@ immutable snapshot parts, pinning the head and loading at most 16 graph document
 per phase. Plan publication retains head CAS and restarts history/snapshot when
 the current head changed. Cache mutation phases shrink to 32 rows. Sanitized
 phase/type/status diagnostics distinguish provider backoff from storage failures.
+
+### Single-process development (October 15)
+
+Use one root Vite server on port 5173. A development-only plugin maps
+`/investment/` to the existing investment HTML entry and mounts its public assets.
+Both source trees use the same Vite module graph, React refresh connection and
+shared dependency instances. Preserve independent production builds and CSS entry
+points. Legacy investment dev commands delegate to the root server, and a busy
+port fails explicitly rather than silently changing the authenticated origin.

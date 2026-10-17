@@ -19,7 +19,7 @@ import {
   cn,
 } from "@mako-cloud/ui";
 import { ChevronLeft } from "lucide-react";
-import { type FormEvent, useId, useMemo, useState } from "react";
+import { type FormEvent, useId, useMemo, useState, useEffect } from "react";
 
 import type { RationalApp } from "../data/rational.js";
 import type { ScopeSession } from "../data/scope.js";
@@ -123,6 +123,14 @@ export function AccountScreen({
           })),
     [account],
   );
+  const [importReady, setImportReady] = useState(false);
+  const [importStatus, setImportStatus] = useState("Checking import readiness…");
+  useEffect(() => {
+    let active = true;
+    const hh = app.state.currentHouseholdId;
+    if (app.monarch && hh) void app.monarch.call<{ready:boolean;verified:boolean|null}>("account-status", hh, { accountId }).then(status => { if(active) { setImportReady(true); setImportStatus(status.verified === false ? "History imported · balance unverified · ready for bank linking" : "Ready for bank linking"); } }).catch(error => { if(active) { setImportReady(false); setImportStatus(error instanceof Error ? error.message : "Import status unavailable"); } });
+    return () => { active = false; };
+  }, [app, accountId]);
   const [panel, setPanel] = useState<"edit" | "value" | "holding" | null>(null);
   const [editingHolding, setEditingHolding] = useState<HoldingRow | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -175,6 +183,7 @@ export function AccountScreen({
 
   return (
     <section aria-labelledby="account-title" data-testid="account-screen" className="grid gap-6">
+      {app.config.mode === "live" ? <p role="status" className="text-sm">{importStatus}</p> : null}
       <div className="grid gap-3">
         <Breadcrumb />
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -208,6 +217,7 @@ export function AccountScreen({
           </div>
           {canEdit ? (
             <div className="flex flex-wrap items-center justify-end gap-2">
+              {!closed && app.config.mode === "live" ? <Button variant="outline" disabled={!importReady} title={importStatus} onClick={() => { window.location.hash = `${routeHash({ name:"settings", page:"connections" })}?account=${encodeURIComponent(account.id)}`; }}>Link bank</Button> : null}
               <Button variant="outline" onClick={() => setPanel("edit")}>
                 Edit
               </Button>

@@ -12,12 +12,10 @@ cd ..  # Rational repository root
 npm ci
 npm ci --prefix investment/frontend
 npm run dev
-# In another terminal:
-npm run dev:investment
 ```
 
-Open http://127.0.0.1:5173/investment/ and use your Rational sign-in. Vite is
-the only local server required. API calls go directly to the configured Mako
+Open http://localhost:5173/investment/ and use your Rational sign-in. One Vite
+process serves both apps, including hot reload. API calls go directly to the configured Mako
 `robinlab-api` function; there is no localhost backend fallback. Configuration
 identifiers/public project key are in `frontend/src/api/mako-config.json` and
 `mako/runtime.json`. Service/provider secrets belong in Mako secret storage.

@@ -22,7 +22,7 @@
     "typecheck": "tsc -b --pretty false && tsc -p tsconfig.test.json --pretty false",
     "build:household": "tsc -b && vite build",
     "test:investment": "node --test investment/mako/serverless/tests/*.test.mjs && node --test investment/frontend/tests/*.test.mjs",
-    "dev:investment": "npm --prefix investment/frontend run dev"
+    "dev:investment": "npm run dev --"
   },
   "dependencies": {
     "@fontsource-variable/inter": "5.3.0",
@@ -43,6 +43,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@types/react": "^19.1.9",
     "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^5.2.0",
     "fake-indexeddb": "^6.2.5",
     "tailwindcss": "^4.3.3",
     "typescript": "~5.9.3",

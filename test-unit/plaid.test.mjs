@@ -55,6 +55,9 @@ test("Plaid's positive-outflow major units become Rational's negative minor unit
   assert.equal(minorUnitsFromPlaid(-500), 50_000, "a deposit becomes positive money arriving");
   assert.equal(minorUnitsFromPlaid(12.34), -1234, "float representation must not shave a cent");
   assert.equal(minorUnitsFromPlaid(0), 0);
+  assert.equal(minorUnitsFromPlaid(500, "JPY"), -500);
+  assert.equal(minorUnitsFromPlaid(1.234, "KWD"), -1234);
+  assert.throws(() => minorUnitsFromPlaid(1.234, "USD"), /decimal places/);
 });
 
 test("a sync page's added and modified entries become statement upserts", () => {

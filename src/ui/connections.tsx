@@ -21,12 +21,14 @@ import {
 import { CircleAlert, FileSpreadsheet, Landmark, Plug } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 
-import { openPlaidLink } from "../data/plaid.js";
+import { compatibleAccount, providerAccountType, type AccountSelection } from "../../functions/shared/plaid-mapping.js";
+import { openPlaidLink, type PlaidLinkSession } from "../data/plaid.js";
 import type { RationalApp } from "../data/rational.js";
 import type { ScopeSession } from "../data/scope.js";
 import type { ConnectionDocument, HouseholdCollectionId } from "../model/types.js";
 import { settingFor } from "../selectors/alerts.js";
 import { useQuery } from "./hooks.js";
+import { BankOverlapReview } from "./bank-review.js";
 import { routeHash } from "./router.js";
 
 /**
@@ -64,6 +66,7 @@ export function ConnectionsScreen({
   app: RationalApp;
   session: ScopeSession<HouseholdCollectionId>;
 }) {
+  const requestedAccount = new URLSearchParams(window.location.hash.split("?")[1] ?? "").get("account");
   const connections = useQuery(session.collection("connections")?.find() ?? null);
   const accounts = useQuery(
     session.collection("accounts")?.find({ sort: [{ name: "asc" }] }) ?? null,
@@ -74,15 +77,26 @@ export function ConnectionsScreen({
   // function itself: a copy deployed without Plaid credentials answers no and
   // this screen simply never offers the option.
   const [plaidReady, setPlaidReady] = useState(false);
+  const [plaidEnvironment, setPlaidEnvironment] = useState<"sandbox" | "production">("sandbox");
   const [plaidBusy, setPlaidBusy] = useState(false);
+  const [pendingLinks, setPendingLinks] = useState<PlaidLinkSession[]>([]);
+  const [pendingLoaded, setPendingLoaded] = useState(app.config.mode !== "live");
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     app.plaid
-      ?.configured()
-      .then((configured) => {
-        if (!cancelled) setPlaidReady(configured);
+      ?.status()
+      .then((status) => {
+        if (!cancelled) {
+          setPlaidReady(status.configured);
+          setPlaidEnvironment(status.environment);
+          const householdId = app.state.currentHouseholdId;
+          if (status.configured && householdId && app.config.mode === "live") {
+            void app.plaid?.pending(householdId).then(links => { if (!cancelled) { setPendingLinks(links); setPendingLoaded(true); } }).catch(() => { if (!cancelled) setProblem("Unfinished bank links could not be loaded. Reload before creating another connection."); });
+          }
+        }
       })
-      .catch(() => undefined);
+      .catch(() => { if (!cancelled) setProblem("Bank-linking status could not be loaded. Try again after reconnecting."); });
     return () => {
       cancelled = true;
     };
@@ -99,22 +113,21 @@ export function ConnectionsScreen({
   const connectPlaid = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
-    const accountId = String(new FormData(form).get("account_id") ?? "");
     const client = app.plaid;
     const householdId = app.state.currentHouseholdId;
-    if (client === null || householdId === null || accountId === "") return;
+    if (client === null || householdId === null) return;
     setPlaidBusy(true);
     try {
       // Token from the function, widget from Plaid, public token straight
       // back to the function. No token that outlives this handler ever
       // touches the browser.
       const linked = await openPlaidLink(await client.linkToken());
-      await client.exchange({
+      const pending = await client.exchange({
         publicToken: linked.publicToken,
         householdId,
-        accountId,
         institution: linked.institution,
       });
+      setPendingLinks(links => [...links.filter(link => link.linkId !== pending.linkId), pending]);
       form.reset();
       setProblem(null);
     } catch (error) {
@@ -122,6 +135,38 @@ export function ConnectionsScreen({
     } finally {
       setPlaidBusy(false);
     }
+  };
+
+  const mapAccounts = async (event: FormEvent<HTMLFormElement>, link: PlaidLinkSession) => {
+    event.preventDefault();
+    const householdId = app.state.currentHouseholdId;
+    if (!householdId || !app.plaid) return;
+    const data = new FormData(event.currentTarget);
+    const mappings = link.accounts.flatMap<AccountSelection>(account => {
+      const accountId = String(data.get(account.id) ?? "");
+      if (accountId === "__create__") return [{ providerAccountId: account.id, create: true }];
+      return accountId ? [{ providerAccountId: account.id, accountId }] : [];
+    });
+    setPlaidBusy(true);
+    try {
+      await app.plaid.map(link.linkId, householdId, mappings);
+      setPendingLinks(links => links.filter(candidate => candidate.linkId !== link.linkId));
+      setProblem(null);
+      setSyncMessage("Bank accounts linked. The cloud will import history and reconcile balances.");
+      const result = await app.plaid.sync(link.linkId, householdId);
+      setSyncMessage(result.outcome);
+    } catch (error) {
+      setProblem(error instanceof Error ? error.message : "Account linking failed.");
+    } finally { setPlaidBusy(false); }
+  };
+
+  const syncBank = async (linkId: string) => {
+    const householdId = app.state.currentHouseholdId;
+    if (!householdId || !app.plaid) return;
+    setPlaidBusy(true);
+    try { setSyncMessage((await app.plaid.sync(linkId, householdId)).outcome); setProblem(null); }
+    catch (error) { setProblem(error instanceof Error ? error.message : "Bank sync failed."); }
+    finally { setPlaidBusy(false); }
   };
 
   const connect = async (event: FormEvent<HTMLFormElement>) => {
@@ -200,11 +245,12 @@ export function ConnectionsScreen({
                       <TableHead scope="row" className="h-auto p-2 text-foreground">
                         {connection.institution}
                       </TableHead>
-                      <TableCell>{accountName(connection.account_id)}</TableCell>
+                      <TableCell>{connection.account_ids?.length ? connection.account_ids.map(accountName).join(", ") : accountName(connection.account_id)}</TableCell>
                       <TableCell>
                         <Badge variant={STATUS_VARIANTS[status]} data-testid="status">
                           {STATUS_LABELS[status]}
                         </Badge>
+                        {connection.kind === "plaid" && status !== "disconnected" ? <Button size="sm" variant="outline" disabled={plaidBusy} onClick={() => void syncBank(connection.id)}>Sync now</Button> : null}
                       </TableCell>
                       <TableCell className="text-muted-foreground" data-testid="last-sync">
                         {connection.last_sync_at === undefined
@@ -258,11 +304,11 @@ export function ConnectionsScreen({
 
       <Card>
         <CardHeader>
-          <h3 className="text-base font-semibold leading-none">Imports</h3>
+          <h3 className="text-base font-semibold leading-none">Generic CSV imports</h3>
         </CardHeader>
         <CardContent className="grid gap-4">
           {imports.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No imports yet.</p>
+            <p className="text-sm text-muted-foreground">No generic CSV imports yet.</p>
           ) : (
             <ul className="m-0 grid list-none gap-2 p-0 text-sm" aria-label="Imports">
               {imports
@@ -291,6 +337,36 @@ export function ConnectionsScreen({
         </CardContent>
       </Card>
 
+      {app.config.mode === "live" ? <BankOverlapReview app={app}/> : null}
+      {requestedAccount ? <p>Choose the bank account that belongs to {accountName(requestedAccount)}. Other accounts stay skipped until explicitly selected.</p> : null}
+      {syncMessage ? <p role="status">{syncMessage}</p> : null}
+      {pendingLinks.map(link => (
+        <Card key={link.linkId}>
+          <CardHeader><h3>Add accounts from {link.institution}</h3>
+            <CardDescription>Create accounts directly from your bank, including their balances and available transaction history. You can skip an account or connect it to an existing Rational account. Investment accounts currently import balances only.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form aria-label={`Add ${link.institution} accounts`} className="grid gap-4" onSubmit={event => void mapAccounts(event, link)}>
+              {link.accounts.map(provider => {
+                const saved = link.mappings?.find(mapping => mapping.providerAccountId === provider.id);
+                const canCreate = providerAccountType(provider) !== null && provider.balance !== null;
+                return (
+                <Field key={provider.id} label={`${provider.name}${provider.mask ? ` (…${provider.mask})` : ""} · ${provider.currency}`} htmlFor={`map-${provider.id}`}>
+                  <NativeSelect id={`map-${provider.id}`} name={provider.id} defaultValue={saved?.accountId ?? (link.mappings ? "" : requestedAccount && accounts.some(account=>account.id===requestedAccount && compatibleAccount(provider,account)) ? requestedAccount : "")}>
+                    <option value="">Skip this account</option>
+                    {canCreate ? <option value="__create__">Create account from bank</option> : null}
+                    {saved && !accounts.some(account => account.id === saved.accountId) ? <option value={saved.accountId}>Resume creating account from bank</option> : null}
+                    {accounts.filter(account => account.closed_at == null && compatibleAccount(provider, account)).map(account => (
+                      <option key={account.id} value={account.id}>{account.name}</option>
+                    ))}
+                  </NativeSelect>
+                </Field>
+              ); })}
+              <Button type="submit" disabled={plaidBusy}>{plaidBusy ? "Saving…" : "Add selected accounts"}</Button>
+            </form>
+          </CardContent>
+        </Card>
+      ))}
       {plaidReady ? (
         <Card aria-labelledby="plaid-title">
           <CardHeader>
@@ -298,41 +374,35 @@ export function ConnectionsScreen({
               Connect through Plaid
             </h3>
             <CardDescription>
-              Link a real institution in Plaid&apos;s sandbox. The connection syncs on the same
-              fifteen-minute schedule as everything else; no credential ever reaches this browser.
+              {plaidEnvironment === "sandbox"
+                ? "Plaid is in test mode. Sandbox connections use fictional accounts and cannot sync your real bank data."
+                : "Sign in to your bank through Plaid, then match accounts to your imported Rational history. Balances and available transactions sync automatically in the cloud."}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form
+            {app.config.mode === "live" && plaidEnvironment === "sandbox" ? (
+              <p className="text-sm text-muted-foreground">
+                Real bank linking requires Plaid production access and production credentials configured for Rational.
+                Your manually imported accounts remain available.
+              </p>
+            ) : <form
               className="grid gap-4"
               aria-label="Connect through Plaid"
               data-testid="plaid-connect"
               onSubmit={(event) => void connectPlaid(event)}
             >
-              <div className="grid gap-4 sm:grid-cols-3">
-                <Field label="Account" htmlFor="plaid-account">
-                  <NativeSelect id="plaid-account" name="account_id" defaultValue="" required>
-                    <option value="">Choose an account</option>
-                    {accounts.map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.name}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </Field>
-              </div>
               <div className="flex gap-2">
-                <Button type="submit" disabled={plaidBusy}>
+                <Button type="submit" disabled={plaidBusy || !pendingLoaded || pendingLinks.length > 0}>
                   <Landmark />
                   {plaidBusy ? "Linking…" : "Connect through Plaid"}
                 </Button>
               </div>
-            </form>
+            </form>}
           </CardContent>
         </Card>
       ) : null}
 
-      <Card aria-labelledby="connect-title">
+      {app.config.mode === "fake" ? <Card aria-labelledby="connect-title">
         <CardHeader>
           <h3 id="connect-title" className="text-base font-semibold leading-none">
             Connect an account
@@ -386,7 +456,7 @@ export function ConnectionsScreen({
             </div>
           </form>
         </CardContent>
-      </Card>
+      </Card> : null}
     </section>
   );
 }
