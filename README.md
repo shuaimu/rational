@@ -136,9 +136,15 @@ household net worth.
 npm ci
 npm ci --prefix investment/frontend
 npm run build                  # both static entry points in web-dist/
-npm run dev                    # household app on 127.0.0.1:5173
-npm run dev:investment         # starts investment assets; visit via 127.0.0.1:5173/investment/
+npm run dev                    # one Vite process serves both apps on port 5173
 ```
+
+Open `http://localhost:5173/` for Rational or
+`http://localhost:5173/investment/` for Rational Investment. Both entry points
+support hot reload through the same server. The compatibility command
+`npm run dev:investment` (or `npm run dev` inside `investment/frontend`) starts
+that same server; run only one of these commands. All API and scheduled sync work
+runs in Mako Cloud. Production remains a static site.
 
 No local backend is required. Credentials, financial exports, and runtime state
 must never be committed. See `openspec/changes/integrate-rational-investment/`

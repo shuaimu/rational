@@ -31,3 +31,13 @@ Rational's delivery workflow SHALL build and validate both application entry poi
 #### Scenario: Combined production build
 - **WHEN** the deployment workflow builds the application repository
 - **THEN** the artifact contains both homepages and working assets under their configured paths, without either build erasing the other
+
+### Requirement: One local development server
+The root `npm run dev` command SHALL serve Rational at `/` and Rational Investment
+at `/investment/` through one Vite process on port 5173. Both entry points SHALL
+support source hot updates, direct reloads and their static/Wasm assets without
+requiring a second frontend server or local backend.
+
+#### Scenario: Develop both applications
+- **WHEN** a developer starts the root dev command with no other app server running
+- **THEN** both interfaces load on the same origin and source edits update the corresponding interface

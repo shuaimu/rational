@@ -7,5 +7,4 @@ export default defineConfig(({ command }) => ({
   resolve: { dedupe: ['@mako-cloud/rxdb', 'rxdb', 'rxjs', 'dexie', 'react', 'react-dom'] },
   plugins: [react(), tailwindcss()],
   build: { outDir: '../../web-dist/investment', emptyOutDir: true },
-  server: { port: 5174 },
 }));
