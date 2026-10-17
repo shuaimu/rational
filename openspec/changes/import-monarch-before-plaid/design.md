@@ -105,3 +105,7 @@ Current public ledger schemas remain unchanged. Private `import_records` holds u
 The existing hourly dispatcher may request an opt-in Mako durable continuation after a successful import phase. This advances admitted history in bounded cloud invocations while the browser is closed; it does not increase the daily bank refresh cadence or add a recurring schedule. Continuations stop when no import phase progressed, when work needs review, or at the platform chain limit, and the hourly dispatcher remains recovery.
 
 The actual transaction export contains only single-tag values. The preview defaults to preserving each tag cell intact and offers explicit comma/semicolon interpretation for reviewed exports; no undocumented delimiter is guessed.
+
+### Custom source categories
+
+The user chose to retain Buy/Sell as custom types. The import manifest accepts `custom`, preserves the exact source category label, and leaves optional public `category_kind` unset instead of assigning expense, income, or transfer. Categories displays this as custom. Amounts, balances, notes, and source provenance remain unchanged. Existing cash-flow behavior for categories without a standard kind continues to follow signed amounts; custom selection does not silently hide rows as transfers. No public schema migration is needed.

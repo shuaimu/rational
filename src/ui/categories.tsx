@@ -649,7 +649,7 @@ export function CategoriesScreen({
                           </span>
                           {nameCell(category)}
                           {group === null ? (
-                            <Badge variant="outline">{category.category_kind ?? "expense"}</Badge>
+                            <Badge variant="outline">{category.category_kind ?? "custom"}</Badge>
                           ) : null}
                         </span>
                       </TableHead>

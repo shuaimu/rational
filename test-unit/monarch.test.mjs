@@ -103,3 +103,16 @@ test('immutable admission and upload bounds reject malformed chunks and stale op
  await assert.rejects(f.engine.advance(bad.id,'home'),/calendar/);
  assert.equal([...f.docs.keys()].filter(k=>k.startsWith('transactions/')).length,0);
 });
+
+test('custom Buy and Sell labels preserve source amounts without standard classification or transfer flags',async()=>{
+ const f=fixture(),rows=[source({category:'Buy',amount:'-5.25'}),source({line:3,sourceId:'sell-id',category:'Sell',amount:'10'})];
+ const job=await admitted(f,rows,{categories:{Buy:'custom',Sell:'custom'}});
+ assert.equal((await finish(f,job.id)).created,2);
+ const categories=[...f.docs].filter(([k,d])=>k.startsWith('taxonomy/')&&d.body.kind==='category').map(([,d])=>d.body);
+ assert.deepEqual(categories.map(c=>c.name).sort(),['Buy','Sell']);
+ assert.ok(categories.every(c=>!Object.hasOwn(c,'category_kind')));
+ const txs=[...f.docs].filter(([k])=>k.startsWith('transactions/')).map(([,d])=>d.body);
+ assert.deepEqual(txs.map(t=>t.amount),[-525,1000]);
+ assert.ok(txs.every(t=>!t.transfer_id&&!t.hidden));
+ for(const tx of txs)assert.equal((await f.engine.source('home',tx.id)).category,categories.find(c=>c.id===tx.category_id).name);
+});

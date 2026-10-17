@@ -572,7 +572,7 @@ export class MonarchImport {
           updated_at: this.now(),
           kind,
           name,
-          ...(categoryKind ? { category_kind: categoryKind } : {}),
+          ...(categoryKind && categoryKind !== "custom" ? { category_kind: categoryKind } : {}),
         },
         null,
       );

@@ -26,6 +26,8 @@ export function MonarchSource({ app, transactionId }: { app: RationalApp; transa
     <details className="rounded-md border p-3">
       <summary>Original Monarch record</summary>
       <dl className="grid gap-2 mt-3 text-sm">
+        <dt>Source category</dt>
+        <dd>{source.category || "Not supplied"}</dd>
         <dt>Original statement</dt>
         <dd className="whitespace-pre-wrap">{source.statement || "Not supplied"}</dd>
         <dt>Source owner label</dt>
