@@ -479,6 +479,7 @@ export function MonarchImportPanel({
                           setConfirmed(false);
                         }}
                       >
+                        <option value="custom">Custom (preserve source label)</option>
                         <option value="expense">Expense</option>
                         <option value="income">Income</option>
                         <option value="transfer">Transfer (excluded from spending)</option>

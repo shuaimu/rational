@@ -29,7 +29,7 @@
 - [x] 4.3 Test imported-to-bank matching, ambiguous overlap, retries between identity and ledger writes, provider corrections/removals and unchanged account IDs.
 - [ ] 4.4 Exercise a synthetic import exceeding twenty thousand transactions with bounded requests, durable checkpoints and completion after closing the browser.
 - [x] 4.5 Run affected typechecks, builds and focused tests, plus required repository checks before PR; perform Chrome smoke checks for import preview/progress and existing-account linking.
-- [ ] 4.6 Deploy compatible schemas/functions and publish the updated frontend; verify old clients fail safely and generic CSV import still works.
+- [x] 4.6 Deploy compatible schemas/functions and publish the updated frontend; verify old clients fail safely and generic CSV import still works.
 - [ ] 4.7 Preview the private user exports, resolve account-name/balance ambiguities, import accepted data and verify per-account counts and balances against the source.
 - [ ] 4.8 After history verification, hand off the first bank's sign-in/consent, link its returned accounts to the imported accounts and verify duplicate handling before continuing remaining institutions.
 
@@ -39,3 +39,5 @@
 - Chrome verified preview, duplicate purchases, notes/review flags, balance evidence, cloud progress, existing-account Link bank routing, and the unchanged generic CSV importer. Synthetic records were separately identified for cleanup.
 - Root typecheck and household build, 261 unit tests (serial run), strict cloud function typecheck, Investment lint/build/Rust/function tests, and OpenSpec validation passed. The parallel unit run exposes a pre-existing timing-sensitive bulk-input fixture; the serial full suite passes.
 - Real export admission awaits the user's resolution of duplicate Monarch Buy/Sell category names. Bank consent remains deferred until history verification. No real CSV transactions were admitted.
+
+- Release: Rational PR3 merged and Pages run 38998416881 succeeded. Published Monarch UI verified in Chrome. Function v14 is healthy. All 18 synthetic cloud records were removed with revision checks; local and published Personal accounts are empty. The real local preview has 50 verified account mappings, balance evidence and source-derived category kinds; Buy/Sell and final admission remain pending.

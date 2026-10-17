@@ -1,5 +1,5 @@
 /** Shared, strict Monarch contract. Source IDs and decimal amounts stay strings until mapping. */
-export type CategoryKind = "income" | "expense" | "transfer";
+export type CategoryKind = "income" | "expense" | "transfer" | "custom";
 export type TagEncoding = "single" | "comma" | "semicolon";
 export interface SourceRow {
   line: number;
@@ -344,6 +344,6 @@ export function validateManifest(manifest: MonarchManifest): void {
     }
   }
   for (const kind of Object.values(manifest.categories))
-    if (!["income", "expense", "transfer"].includes(kind))
+    if (!["income", "expense", "transfer", "custom"].includes(kind))
       throw new Error("Choose each category's kind.");
 }

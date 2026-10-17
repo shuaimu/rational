@@ -58,3 +58,10 @@ Only an owner or editor of the destination household SHALL admit imports or chan
 #### Scenario: Request targets another household
 - **WHEN** a caller without write membership supplies another household's import or account identifier
 - **THEN** the operation is rejected without reading private source data or mutating that household
+
+### Requirement: Preserve custom category types
+The importer SHALL offer a custom classification that preserves the exact source category label without assigning income, expense, or transfer. It SHALL retain signed amounts and source metadata unchanged.
+
+#### Scenario: User preserves Buy and Sell
+- **WHEN** the user selects custom for source categories Buy and Sell
+- **THEN** their exact category names remain visible, standard category kinds remain unset, and neither entry is hidden or marked as a transfer by that choice
