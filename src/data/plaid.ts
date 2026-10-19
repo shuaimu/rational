@@ -113,23 +113,36 @@ export class MakoPlaidClient implements PlaidClient {
       });
     }
     let response: Response;
-    try {
-      response = await this.#fetch(`${this.#url}/plaid/${route}`, {
-        method,
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${accessToken}`,
-          ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-        },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      });
-    } catch {
-      throw new PlaidError("The institution is unreachable while you are offline.", {
-        code: "unavailable",
-      });
+    for (let attempt = 0; ; attempt++) {
+      try {
+        response = await this.#fetch(`${this.#url}/plaid/${route}`, {
+          method,
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${accessToken}`,
+            ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+          },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        });
+      } catch {
+        throw new PlaidError("Bank linking could not reach the cloud. Check your connection and retry.", {
+          code: "unavailable",
+        });
+      }
+      // Status and pending only read. They share a single cloud function slot
+      // with import/review requests, so a rejected admission is safe to retry.
+      // Never replay token exchange, account mapping, or sync writes here.
+      if (response.status !== 429 || !["status", "pending"].includes(route) || attempt >= 5) break;
+      await response.body?.cancel();
+      await new Promise(resolve => setTimeout(resolve, Math.min(250 * 2 ** attempt, 4000)));
     }
     const payload: unknown = await response.json().catch(() => null);
     if (!response.ok) {
+      if (response.status === 429) {
+        throw new PlaidError("The cloud is busy finishing another request. Please retry bank linking shortly.", {
+          status: 429, code: "concurrency_limited",
+        });
+      }
       const error = errorOf(payload);
       throw new PlaidError(error.message, { status: response.status, code: error.code });
     }

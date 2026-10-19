@@ -7,5 +7,6 @@ declare const __RATIONAL_ENV__: {
   readonly environmentId: string;
   readonly publicProjectKey: string;
   readonly functionsEndpoint?: string | null;
+  readonly liveStreams?: boolean;
   readonly signIn?: import("./config.js").SignInSettings;
 } | null;

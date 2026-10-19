@@ -174,7 +174,7 @@ export interface Transaction extends BaseDocument {
   readonly notes?: string;
   readonly splits: readonly Split[];
   readonly pending?: boolean;
-  /** Set on what a member typed and on what a member or a rule has looked at. */
+  /** True: reviewed. False: explicitly needs review. Absent: no explicit review choice. */
   readonly reviewed?: boolean;
   /** Kept out of budgets, reports, and cash flow. */
   readonly hidden?: boolean;
@@ -195,7 +195,8 @@ export type BudgetBucket = "fixed" | "flexible" | "non_monthly";
 
 /**
  * A category, a tag, a category group, or a merchant. `category_kind` is set
- * on categories and groups; `parent_id` on a category names its group;
+ * on categories and groups (absent on preserved custom types); a category and
+ * its group have the same financial type. `parent_id` names its group;
  * `patterns` on a merchant are the normalized descriptions that mean it.
  */
 export interface TaxonomyEntry extends BaseDocument {
@@ -410,6 +411,7 @@ export interface RationalDocuments {
   recurrences: Recurrence;
   goals: Goal;
   net_worth_snapshots: NetWorthSnapshot;
+  account_balance_snapshots: AccountBalanceSnapshot;
   alerts: AlertDocument;
   connections: ConnectionDocument;
 }
@@ -424,8 +426,8 @@ export const DIRECTORY_COLLECTIONS = [
 export type DirectoryCollectionId = (typeof DIRECTORY_COLLECTIONS)[number];
 
 /**
- * Collections replicated into one database per household. Ten of them, plus
- * the two directory collections, is twelve open at once — one under RxDB's
+ * Collections replicated into one database per household. Eleven of them, plus
+ * the two directory collections, is thirteen open at once — within RxDB's
  * open-source limit, so every collection of the model is open from the start
  * rather than opened screen by screen.
  */
@@ -438,7 +440,18 @@ export const HOUSEHOLD_COLLECTIONS = [
   "recurrences",
   "goals",
   "net_worth_snapshots",
+  "account_balance_snapshots",
   "alerts",
   "connections",
 ] as const satisfies readonly CollectionId[];
 export type HouseholdCollectionId = (typeof HOUSEHOLD_COLLECTIONS)[number];
+
+export interface AccountBalanceSnapshot extends BaseDocument {
+  readonly account_id: string;
+  readonly date: string;
+  readonly balance: number;
+  readonly currency: string;
+  readonly source: "plaid" | "monarch";
+  readonly connection_id: string;
+  readonly observed_at: number;
+}

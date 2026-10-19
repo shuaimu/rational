@@ -25,6 +25,7 @@
  * alone, a bill advanced once no longer matches its payment, an alert has one
  * id per condition, and a duplicate already marked is not marked again.
  */
+import { allDocumentPages } from "../shared/page-documents.ts";
 import {
   createServiceClient,
   type FunctionDocument,
@@ -145,6 +146,7 @@ async function runHousehold(
   const transactions = await page(`nightly categorization for ${householdId}`, TRANSACTIONS, scope);
   const rules = await page(`nightly categorization for ${householdId}`, RULES, scope);
   const accounts = await page(`nightly snapshot for ${householdId}`, ACCOUNTS, scope);
+  const reports = await page(`reported balances for ${householdId}`, "account_balance_snapshots", scope);
   // Read once, for the detection that must not propose a known bill again and
   // for the advance that moves a paid one on.
   const recurrences = await page(
@@ -167,8 +169,8 @@ async function runHousehold(
   // changes whether a charge was large, a budget over, or an account low. The
   // bills are the exception -- they are read after tonight's advance, or a
   // bill paid early would be announced as coming due.
-  const alertsFired = await raiseAlerts(householdId, day, scope, accounts, transactions, advanced);
-  const snapshot = await writeSnapshot(householdId, currency, day, accounts, transactions);
+  const alertsFired = await raiseAlerts(householdId, day, scope, accounts, transactions, advanced, reports);
+  const snapshot = await writeSnapshot(householdId, currency, day, accounts, transactions, reports);
   return {
     householdId,
     categorized,
@@ -356,8 +358,9 @@ async function writeSnapshot(
   day: string,
   accounts: readonly FunctionDocument[],
   transactions: readonly FunctionDocument[],
+  reports: readonly FunctionDocument[] = [],
 ): Promise<string> {
-  const { assets, liabilities } = netWorth(currency, accounts, transactions);
+  const { assets, liabilities } = netWorth(currency, accounts, transactions, reports);
   const id = snapshotId(householdId, day);
   const reason = `nightly snapshot for ${householdId}`;
   const existing = await read(reason, SNAPSHOTS, id);
@@ -372,7 +375,7 @@ async function writeSnapshot(
     liabilities,
     net_worth: assets - liabilities,
     currency,
-    balances: snapshotBalances(accounts, transactions),
+    balances: snapshotBalances(accounts, transactions, reports),
   };
   await write(
     reason,
@@ -404,6 +407,7 @@ async function raiseAlerts(
   accounts: readonly FunctionDocument[],
   transactions: readonly FunctionDocument[],
   recurrences: readonly FunctionDocument[],
+  reports: readonly FunctionDocument[] = [],
 ): Promise<number> {
   const reason = `nightly alerts for ${householdId}`;
   const stored = await page(reason, ALERTS, scope);
@@ -417,10 +421,10 @@ async function raiseAlerts(
     householdId,
     day,
     transactions: alertTransactions(transactions),
-    accounts: alertAccounts(accounts, transactions),
+    accounts: alertAccounts(accounts, transactions, reports),
     budgets: alertBudgets(budgets, transactions),
     bills: billSubjects(recurrences, day),
-    goals: goalSubjects(goals, balancesOf(accounts, transactions), day),
+    goals: goalSubjects(goals, balancesOf(accounts, transactions, reports), day),
     connections: [],
     existingIds: new Set(
       stored.filter((document) => !document._deleted).map((document) => String(document.body.id)),
@@ -508,8 +512,9 @@ export function alertTransactions(
 export function alertAccounts(
   accounts: readonly FunctionDocument[],
   transactions: readonly FunctionDocument[],
+  reports: readonly FunctionDocument[] = [],
 ): readonly AlertAccount[] {
-  const balances = balancesOf(accounts, transactions);
+  const balances = balancesOf(accounts, transactions, reports);
   return accounts
     .filter((document) => !document._deleted)
     .map((document) => ({
@@ -565,30 +570,25 @@ async function page(
   collectionId: string,
   predicates: ReadonlyArray<{ field: string; operator: "eq" | "gte"; value: string | number }>,
 ): Promise<readonly FunctionDocument[]> {
-  const documents: FunctionDocument[] = [];
-  let cursor: string | null = null;
-  for (let request = 0; request < 50; request += 1) {
-    const result = await service(reason)
-      .documents(collectionId)
-      .query({
-        predicates: [...predicates],
-        sort: [],
-        cursor,
-        limit: 200,
-      });
-    documents.push(...result.documents);
-    cursor = result.nextCursor ?? null;
-    if (cursor === null) break;
-  }
-  return documents;
+  return allDocumentPages(cursor => service(reason, collectionId).documents(collectionId).query({
+    predicates: [...predicates], sort: [], cursor, limit: 200,
+  }));
 }
 
-function service(reason: string): ServiceFunctionClient {
+function credentialFor(collectionId?: string): string {
+  if (collectionId === "account_balance_snapshots") {
+    // Bootstrap may instead grant this collection to the function's main credential.
+    try { const key = Deno.env.get("BALANCE_SERVICE_KEY"); if (key) return key; } catch { /* secret not injected */ }
+  }
+  return serviceCredential();
+}
+
+function service(reason: string, collectionId?: string): ServiceFunctionClient {
   return createServiceClient({
     endpoint: environment("MAKO_API_URL"),
     projectId: environment("MAKO_PROJECT_ID"),
     environmentId: environment("MAKO_ENVIRONMENT_ID"),
-    serviceCredential: serviceCredential(),
+    serviceCredential: credentialFor(collectionId),
     reason,
     requestId: `req_${randomSuffix()}${randomSuffix()}`,
   });

@@ -165,8 +165,8 @@ test("a bank export is previewed, deduplicated, categorized by a rule, and impor
   expect(filed[0]?.category).toBeTruthy();
   expect(filed[0]?.rule).toBeTruthy();
   expect(filed[0]?.batch).toBeTruthy();
-  expect(filed[0]?.reviewed).toBeUndefined();
-  expect(stored.find((entry) => entry.description === "SALARY")?.reviewed).toBeUndefined();
+  expect(filed[0]?.reviewed).toBe(false);
+  expect(stored.find((entry) => entry.description === "SALARY")?.reviewed).toBe(false);
   expect(stored.find((entry) => entry.description === "Coffee large")?.reviewed).toBe(true);
 
   // Re-importing the same file writes nothing: every row is now already here.
@@ -179,9 +179,8 @@ test("a bank export is previewed, deduplicated, categorized by a rule, and impor
     "0 to import, 3 already here, 1 unreadable.",
   );
 
-  // The batch is on record under Connections, with what it did.
+  // Import history is not presented as an ongoing bank connection.
   await openSettingsPage(page, "Connections");
-  await expect(page.getByRole("list", { name: "Imports" })).toContainText(
-    "export.csv into Everyday — 2 of 4 rows, 1 already here",
-  );
+  await expect(page.getByRole("heading", { name: "Generic CSV imports" })).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Imports" })).toHaveCount(0);
 });

@@ -70,3 +70,21 @@ test("a magic link signs the person in once and is refused the second time", asy
   await expect(page.getByRole("alert")).toContainText("already been used");
   expect(await page.evaluate(() => window.rational.state.phase)).toBe("signed_out");
 });
+
+test("an expired access token renews after reopening without another sign-in", async ({ page }) => {
+  await openApplication(page);
+  await page.getByRole("button", { name: "Continue with Demo IdP" }).click();
+  await page.waitForFunction(() => window.rational?.state.phase === "ready");
+  await page.evaluate(() => window.rational.waitForSync());
+  await page.evaluate(() => {
+    const key = Object.keys(localStorage).find(key => key.startsWith("rational.auth."))!;
+    const saved = JSON.parse(localStorage.getItem(key)!);
+    saved.expiresAtUnixMilliseconds = Date.now() - 7 * 86_400_000;
+    localStorage.setItem(key, JSON.stringify(saved));
+  });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await page.evaluate(() => window.rational.waitForSync());
+  await expect.poll(() => page.evaluate(() => window.rational.diagnostics().refreshes)).toBe(1);
+  expect(await page.evaluate(() => window.rational.state.user?.email)).toBe("pat.provider@rational.test");
+});

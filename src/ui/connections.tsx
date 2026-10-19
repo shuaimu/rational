@@ -18,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@mako-cloud/ui";
-import { CircleAlert, FileSpreadsheet, Landmark, Plug } from "lucide-react";
+import { CircleAlert, Landmark, Plug } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 
 import { compatibleAccount, providerAccountType, type AccountSelection } from "../../functions/shared/plaid-mapping.js";
@@ -28,7 +28,6 @@ import type { ScopeSession } from "../data/scope.js";
 import type { ConnectionDocument, HouseholdCollectionId } from "../model/types.js";
 import { settingFor } from "../selectors/alerts.js";
 import { useQuery } from "./hooks.js";
-import { BankOverlapReview } from "./bank-review.js";
 import { routeHash } from "./router.js";
 
 /**
@@ -73,10 +72,12 @@ export function ConnectionsScreen({
   );
   const alerts = useQuery(session.collection("alerts")?.find() ?? null);
   const [problem, setProblem] = useState<string | null>(null);
-  // Whether the deployment can talk to Plaid at all. Asked once, of the
-  // function itself: a copy deployed without Plaid credentials answers no and
-  // this screen simply never offers the option.
+  // Keep the linking entry point visible while checking availability or retrying.
   const [plaidReady, setPlaidReady] = useState(false);
+  const [plaidLoading, setPlaidLoading] = useState(true);
+  const [plaidProblem, setPlaidProblem] = useState<string | null>(null);
+  const [statusAttempt, setStatusAttempt] = useState(0);
+  const householdId = app.state.currentHouseholdId;
   const [plaidEnvironment, setPlaidEnvironment] = useState<"sandbox" | "production">("sandbox");
   const [plaidBusy, setPlaidBusy] = useState(false);
   const [pendingLinks, setPendingLinks] = useState<PlaidLinkSession[]>([]);
@@ -84,27 +85,30 @@ export function ConnectionsScreen({
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    app.plaid
-      ?.status()
-      .then((status) => {
-        if (!cancelled) {
-          setPlaidReady(status.configured);
-          setPlaidEnvironment(status.environment);
-          const householdId = app.state.currentHouseholdId;
-          if (status.configured && householdId && app.config.mode === "live") {
-            void app.plaid?.pending(householdId).then(links => { if (!cancelled) { setPendingLinks(links); setPendingLoaded(true); } }).catch(() => { if (!cancelled) setProblem("Unfinished bank links could not be loaded. Reload before creating another connection."); });
-          }
-        }
-      })
-      .catch(() => { if (!cancelled) setProblem("Bank-linking status could not be loaded. Try again after reconnecting."); });
-    return () => {
-      cancelled = true;
+    setPlaidLoading(true);
+    setPlaidReady(false);
+    setPlaidProblem(null);
+    setPendingLoaded(app.config.mode !== "live");
+    setPendingLinks([]);
+    const load = async () => {
+      if (app.plaid === null) return;
+      const status = await app.plaid.status();
+      if (cancelled) return;
+      setPlaidReady(status.configured);
+      setPlaidEnvironment(status.environment);
+      if (status.configured && householdId && app.config.mode === "live") {
+        const links = await app.plaid.pending(householdId);
+        if (!cancelled) { setPendingLinks(links); setPendingLoaded(true); }
+      }
     };
-  }, [app.plaid]);
+    void load().catch((error) => {
+      if (!cancelled) setPlaidProblem(error instanceof Error ? error.message : "Bank linking is temporarily unavailable.");
+    }).finally(() => { if (!cancelled) setPlaidLoading(false); });
+    return () => { cancelled = true; };
+  }, [app.plaid, app.config.mode, householdId, statusAttempt]);
   const institutions = connections.filter(
     (entry) => entry.kind === "institution" || entry.kind === "plaid",
   );
-  const imports = connections.filter((entry) => entry.kind === "import");
   const failing = institutions.filter((entry) => entry.status === "error");
   const syncAlert = settingFor(alerts, "sync_error");
   const accountName = (id: string | undefined) =>
@@ -208,6 +212,50 @@ export function ConnectionsScreen({
         </Alert>
       )}
 
+      <Card aria-labelledby="plaid-title">
+        <CardHeader>
+          <h3 id="plaid-title" className="text-base font-semibold leading-none">
+            Link a bank
+          </h3>
+          <CardDescription>
+            {requestedAccount
+              ? `Connect your bank, then match its account to ${accountName(requestedAccount)} to keep your imported history.`
+              : "Connect your bank through Plaid to add accounts or link existing accounts, then sync automatically."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          {plaidLoading ? <p role="status">Checking bank-linking availability…</p>
+            : plaidProblem ? <Alert variant="destructive"><AlertDescription>
+              Bank linking could not be loaded: {plaidProblem}
+            </AlertDescription></Alert>
+            : !plaidReady ? <p>Bank linking is not configured for this deployment. Plaid credentials must be configured before you can connect a bank.</p>
+            : null}
+          {!plaidLoading && (plaidProblem !== null || !plaidReady) ? (
+            <Button variant="outline" onClick={() => setStatusAttempt(attempt => attempt + 1)}>Retry bank linking</Button>
+          ) : null}
+          {plaidReady && !plaidLoading && !plaidProblem ? <>
+          {app.config.mode === "live" && plaidEnvironment === "sandbox" ? (
+            <p className="text-sm text-muted-foreground">
+              Real bank linking requires Plaid production access and production credentials configured for Rational.
+              Your manually imported accounts remain available.
+            </p>
+          ) : <form
+            className="grid gap-4"
+            aria-label="Connect through Plaid"
+            data-testid="plaid-connect"
+            onSubmit={(event) => void connectPlaid(event)}
+          >
+            <div className="flex gap-2">
+              <Button type="submit" disabled={plaidBusy || !pendingLoaded || pendingLinks.length > 0}>
+                <Landmark />
+                {plaidBusy ? "Linking…" : "Connect through Plaid"}
+              </Button>
+            </div>
+          </form>}
+          </> : null}
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <h3 className="text-base font-semibold leading-none">Connected accounts</h3>
@@ -302,42 +350,7 @@ export function ConnectionsScreen({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <h3 className="text-base font-semibold leading-none">Generic CSV imports</h3>
-        </CardHeader>
-        <CardContent className="grid gap-4">
-          {imports.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No generic CSV imports yet.</p>
-          ) : (
-            <ul className="m-0 grid list-none gap-2 p-0 text-sm" aria-label="Imports">
-              {imports
-                .slice()
-                .sort((left, right) => (right.imported_at ?? 0) - (left.imported_at ?? 0))
-                .map((batch) => (
-                  <li key={batch.id} data-testid={`import-${batch.id}`} className="flex gap-2">
-                    <FileSpreadsheet
-                      aria-hidden="true"
-                      className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                    />
-                    <span>
-                      {batch.filename} into {accountName(batch.account_id)} —{" "}
-                      {batch.created_count ?? 0} of {batch.row_count ?? 0} rows,{" "}
-                      {batch.duplicate_count ?? 0} already here
-                    </span>
-                  </li>
-                ))}
-            </ul>
-          )}
-          <p className="text-sm text-muted-foreground">
-            A CSV statement is imported under{" "}
-            <a href={routeHash({ name: "settings", page: "import" })}>Import</a>; what arrives waits
-            in Needs review until somebody looks at it.
-          </p>
-        </CardContent>
-      </Card>
 
-      {app.config.mode === "live" ? <BankOverlapReview app={app}/> : null}
       {requestedAccount ? <p>Choose the bank account that belongs to {accountName(requestedAccount)}. Other accounts stay skipped until explicitly selected.</p> : null}
       {syncMessage ? <p role="status">{syncMessage}</p> : null}
       {pendingLinks.map(link => (
@@ -367,40 +380,6 @@ export function ConnectionsScreen({
           </CardContent>
         </Card>
       ))}
-      {plaidReady ? (
-        <Card aria-labelledby="plaid-title">
-          <CardHeader>
-            <h3 id="plaid-title" className="text-base font-semibold leading-none">
-              Connect through Plaid
-            </h3>
-            <CardDescription>
-              {plaidEnvironment === "sandbox"
-                ? "Plaid is in test mode. Sandbox connections use fictional accounts and cannot sync your real bank data."
-                : "Sign in to your bank through Plaid, then match accounts to your imported Rational history. Balances and available transactions sync automatically in the cloud."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {app.config.mode === "live" && plaidEnvironment === "sandbox" ? (
-              <p className="text-sm text-muted-foreground">
-                Real bank linking requires Plaid production access and production credentials configured for Rational.
-                Your manually imported accounts remain available.
-              </p>
-            ) : <form
-              className="grid gap-4"
-              aria-label="Connect through Plaid"
-              data-testid="plaid-connect"
-              onSubmit={(event) => void connectPlaid(event)}
-            >
-              <div className="flex gap-2">
-                <Button type="submit" disabled={plaidBusy || !pendingLoaded || pendingLinks.length > 0}>
-                  <Landmark />
-                  {plaidBusy ? "Linking…" : "Connect through Plaid"}
-                </Button>
-              </div>
-            </form>}
-          </CardContent>
-        </Card>
-      ) : null}
 
       {app.config.mode === "fake" ? <Card aria-labelledby="connect-title">
         <CardHeader>

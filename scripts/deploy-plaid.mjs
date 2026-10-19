@@ -49,6 +49,12 @@ if (!activeTransactionIndexes.some(index => index.name === "account_id" && index
 }
 
 const imports = model.collections.find(collection => collection.id === "import_records");
+// Sync alerts filter settings by both household and kind.
+const alertIndexesAnswer = cli(["indexes", "list", "alerts"]);
+const alertIndexes = Array.isArray(alertIndexesAnswer) ? alertIndexesAnswer : alertIndexesAnswer.items ?? alertIndexesAnswer.indexes ?? [];
+if (!alertIndexes.some(index => index.name === "household_kind" && index.state !== "failed")) {
+  cli(["indexes", "create", "alerts", "--name", "household_kind", "--version", "1", "--field", "household_id", "--field", "kind"]);
+}
 let importCollection = null;
 try { importCollection = cli(["collections", "get", imports.id]); } catch(error) { if(error.status !== 4) throw error; }
 if (!importCollection) cli(["collections", "create", imports.id, "--schema", `@${privateFile("import-records.schema.json", JSON.stringify(imports.jsonSchema))}`, "--primary-key", "id", "--schema-version", "3"]);
@@ -63,7 +69,7 @@ if (policy?.policy?.state !== "active") {
   cli(["policies", "activate", imports.id, "1", "--yes"]);
 } else if (policy.policy.rules.length !== 0) throw new Error("Import staging must have no application-user grants.");
 const importServicePath = join(work, "import-sync-service-key");
-if (!existsSync(importServicePath)) cli(["keys", "service", "create", "--id", `sk_rational_import_${Date.now().toString(36)}`, "--collection", "connections,transactions,accounts,plaid_items,alerts,taxonomy,import_records", "--operation", "read,create,update,delete", "--secret-file", importServicePath]);
+if (!existsSync(importServicePath)) cli(["keys", "service", "create", "--id", `sk_rational_import_${Date.now().toString(36)}`, "--collection", "connections,transactions,accounts,plaid_items,alerts,taxonomy,import_records,account_balance_snapshots", "--operation", "read,create,update,delete", "--secret-file", importServicePath]);
 putSecret("IMPORT_SYNC_SERVICE_KEY", importServicePath);
 console.log("Private import storage and dedicated function credential are ready.");
 
@@ -71,7 +77,7 @@ console.log("Private import storage and dedicated function credential are ready.
 const servicePath = join(work, "sync-service-key");
 if (!existsSync(servicePath)) {
   cli(["keys", "service", "create", "--id", `sk_rational_plaid_${Date.now().toString(36)}`,
-    "--collection", "connections,transactions,accounts,plaid_items,alerts", "--operation", "read,create,update,delete", "--secret-file", servicePath]);
+    "--collection", "connections,transactions,accounts,plaid_items,alerts,account_balance_snapshots", "--operation", "read,create,update,delete", "--secret-file", servicePath]);
 }
 putSecret("SYNC_SERVICE_KEY", servicePath);
 putSecret("PLAID_PRODUCTION_CLIENT_ID", join(work, "production-client-id"));
@@ -89,7 +95,7 @@ for (const entry of readdirSync(source)) {
 }
 const current = cli(["functions", "get", "institution-sync"]);
 privateFile("previous-function.json", JSON.stringify(current, null, 2));
-const secretNames = ["IMPORT_SYNC_SERVICE_KEY", "SYNC_SERVICE_KEY", "RATIONAL_RUN_KEY", "PLAID_PRODUCTION_CLIENT_ID", "PLAID_PRODUCTION_SECRET", "PLAID_ENVIRONMENT"];
+const secretNames = [...new Set([...current.configuration.secretNames, "IMPORT_SYNC_SERVICE_KEY", "SYNC_SERVICE_KEY", "RATIONAL_RUN_KEY", "PLAID_PRODUCTION_CLIENT_ID", "PLAID_PRODUCTION_SECRET", "PLAID_ENVIRONMENT"])];
 const functionConfig = { ...current.configuration, secretNames, allowedHosts: ["production.plaid.com"],
   limits: { ...current.configuration.limits, concurrency: 1, cpuMilliseconds: 10000, wallMilliseconds: 60000 } };
 cli(["functions", "update", "institution-sync", "--config", `@${privateFile("function-config.json", JSON.stringify(functionConfig))}`]);

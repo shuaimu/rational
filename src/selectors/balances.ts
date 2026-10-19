@@ -6,6 +6,7 @@ import {
 import {
   ACCOUNT_CLASSES,
   type Account,
+  type AccountBalanceSnapshot,
   accountClassOf,
   type SnapshotBalance,
   type Transaction,
@@ -24,21 +25,21 @@ import { memoizeLast } from "./memo.js";
 export { holdingsValue } from "../../functions/shared/balances.js";
 
 /**
- * Balance per account id: the opening balance, every transaction of the
- * account -- transfers, hidden ones, and balance updates included, because
- * the bank counts them -- and the value of its holdings.
+ * Use the latest reported balance when present. Otherwise derive it from
+ * the opening amount, posted transactions and holdings.
  */
 export function accountBalances(
   accounts: readonly Account[],
   transactions: readonly Transaction[],
+  reports: readonly AccountBalanceSnapshot[] = [],
 ): ReadonlyMap<string, number> {
-  return sharedAccountBalances(accounts, transactions);
+  return sharedAccountBalances(accounts, transactions, reports);
 }
 
 export const selectAccountBalances = memoizeLast(accountBalances);
 
-export function accountBalance(account: Account, transactions: readonly Transaction[]): number {
-  return sharedAccountBalances([account], transactions).get(account.id) ?? account.opening_balance;
+export function accountBalance(account: Account, transactions: readonly Transaction[], reports: readonly AccountBalanceSnapshot[] = []): number {
+  return sharedAccountBalances([account], transactions, reports).get(account.id) ?? account.opening_balance;
 }
 
 export interface NetWorth {

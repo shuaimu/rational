@@ -110,7 +110,7 @@ export function startCollectionReplication<Id extends CollectionId>(
     push: createMakoPushOptions<T>(makoConfig, auth.client, { fetch }),
     live: true,
     retryTime: config.retryTimeMs,
-    waitForLeadership: false,
+    waitForLeadership: true,
     toggleOnDocumentVisible: false,
     autoStart: true,
   });

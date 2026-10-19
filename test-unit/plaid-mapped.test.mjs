@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { accountBalances } from "../functions/shared/balances.ts";
+import { transactionId } from "../functions/institution-sync/institution.ts";
 import { MappedPlaid } from "../functions/institution-sync/plaid-mapped.ts";
 import { compatibleAccount, providerAccounts, validateMappings } from "../functions/shared/plaid-mapping.ts";
 
@@ -47,7 +49,8 @@ async function linked(f) {
   return link;
 }
 function balance(f, accountId) {
-  return f.docs.get(`accounts/${accountId}`).body.opening_balance + [...f.docs].filter(([key, doc]) => key.startsWith("transactions/") && !doc._deleted && doc.body.account_id === accountId).reduce((sum, [,doc]) => sum + doc.body.amount, 0);
+  const rows = name => [...f.docs].filter(([key, doc]) => key.startsWith(name + "/") && !doc._deleted).map(([,doc]) => doc.body);
+  return accountBalances(rows("accounts"), rows("transactions"), rows("account_balance_snapshots")).get(accountId);
 }
 
 test("one exchange maps several accounts; retry and reload reuse the saved Item without leaking credentials", async () => {
@@ -81,7 +84,7 @@ test("accounts, cursors and historical opening balances remain isolated on initi
   f.advance();
   f.pages.set("bank-a", [page([txn("bank-a", "deposit", -100)])]);
   await f.client.sync(link.linkId, "home");
-  assert.equal(f.docs.size, before, "a replay does not duplicate history or reconciliation entries");
+  assert.equal(f.docs.size, before + 2, "a new day records each mapped balance without duplicating transactions");
   assert.equal(balance(f, "a"), 100000);
   const syncCalls = f.calls.filter(call => call.path === "/transactions/sync");
   assert.deepEqual(syncCalls.map(call => call.body.options.account_id), ["bank-a", "bank-b", "bank-a"]);
@@ -201,4 +204,78 @@ test("a bank still preparing history stays pending for hourly retry, not a succe
   f.pages.set("bank-a", [page([txn("bank-a", "history", 42)], { transactions_update_status: "HISTORICAL_UPDATE_COMPLETE" })]);
   assert.equal((await f.client.sync(link.linkId, "home")).pending, false);
   assert.ok(f.docs.get(`connections/${link.linkId}`).body.last_sync_at);
+});
+
+test("an old overlap queue is reconciled after its bank cursor has advanced, then daily sync completes", async () => {
+  const f = fixture(); const link = await f.client.exchange("public-one", "home", "Bank");
+  await f.client.map(link.linkId, "home", [{ providerAccountId: "bank-a", accountId: "a" }]);
+  await f.store.write("transactions", "csv-coffee", {
+    id: "csv-coffee", household_id: "home", account_id: "a", date: "2026-09-30", amount: -525,
+    currency: "USD", description: "Coffee shop", category_id: "food", notes: "Imported note", tags: [], splits: [],
+  }, null);
+  await f.store.write("import_records", "src_csv-coffee", {
+    id: "src_csv-coffee", household_id: "home", account_id: "a", kind: "source",
+    data: JSON.stringify({ transactionId: "csv-coffee", source: { merchant: "Coffee shop", statement: "COFFEE SHOP" } }),
+  }, null);
+  await f.store.write("import_records", "bank-legacy", {
+    id: "bank-legacy", household_id: "home", account_id: "a", kind: "bank-identity", state: "review",
+    data: JSON.stringify({ linkId: link.linkId, providerId: "bank-coffee", accountId: "a", transactionId: null,
+      state: "review", fields: { account_id: "a", date: "2026-10-01", amount: -525, currency: "USD", description: "Coffee shop", external_id: "bank-coffee" },
+      previous: null, candidates: ["csv-coffee"], reason: "Possible overlap", removal: false }),
+  }, null);
+  const result = await f.client.sync(link.linkId, "home"); // Empty provider page: no bank redelivery required.
+  assert.equal(result.pending, false); assert.doesNotMatch(result.outcome, /review/);
+  assert.equal(f.docs.get("import_records/bank-legacy").body.state, "applied");
+  assert.equal(f.docs.get("transactions/csv-coffee").body.external_id, "bank-coffee");
+  assert.equal(f.docs.get("transactions/csv-coffee").body.notes, "Imported note");
+  assert.equal([...f.docs].filter(([key, doc]) => key.startsWith("transactions/") && !doc.body.adjustment).length, 1);
+  assert.equal(balance(f, "a"), 100000);
+  assert.ok(f.docs.get(`connections/${link.linkId}`).body.last_sync_at);
+});
+
+
+test("all mapped source balances are saved before bounded transaction history finishes, with one record per day", async () => {
+  const f = fixture(); const link = await linked(f);
+  f.pages.set("bank-a", [page([txn("bank-a", "deposit", -100)], { has_more:true, next_cursor:"partial" })]);
+  assert.equal((await f.client.sync(link.linkId, "home")).pending, true);
+  const rows = () => [...f.docs].filter(([key]) => key.startsWith("account_balance_snapshots/")).map(([,doc])=>doc.body);
+  assert.equal(rows().length,2);
+  assert.equal(balance(f,"a"),100000); assert.equal(balance(f,"b"),-5000);
+  f.providers[0].balances.current = 950;
+  await f.client.sync(link.linkId,"home",true);
+  assert.equal(rows().length,2); assert.equal(balance(f,"a"),95000);
+  assert.equal([...f.docs.values()].filter(doc=>doc.body.adjustment).length,0);
+  f.advance(); await f.client.sync(link.linkId,"home",true);
+  assert.equal(rows().length,4);
+  assert.equal(rows().find(row=>row.account_id==="a" && row.date==="2026-10-16").balance,95000);
+});
+
+test("saving a source observation precedes retry-safe cleanup of only the sync's own adjustment", async () => {
+  const f=fixture(), link=await linked(f);
+  const legacyId=transactionId("a",`balance-${link.linkId}`);
+  await f.store.write("transactions",legacyId,{id:legacyId, household_id:"home", account_id:"a", amount:123,
+    date:"2026-10-15",currency:"USD",description:"Bank balance reconciliation",external_id:`balance-${link.linkId}`,adjustment:true,hidden:true},null);
+  await f.store.write("transactions","manual",{id:"manual",household_id:"home",account_id:"a",amount:123,description:"Balance update",adjustment:true},null);
+  f.fail((collection)=>collection==="account_balance_snapshots");
+  await assert.rejects(f.client.sync(link.linkId,"home"),/interrupted/);
+  assert.equal(f.docs.get(`transactions/${legacyId}`)._deleted,false);
+  f.fail(null);
+  const remove=f.store.remove; let failed=false;
+  f.store.remove=async (...args)=>{if(!failed){failed=true;throw new Error("cleanup interrupted");}return remove(...args);};
+  await assert.rejects(f.client.sync(link.linkId,"home"),/cleanup interrupted/);
+  assert.equal(balance(f,"a"),100000,"source balance already authoritative before cleanup");
+  await f.client.sync(link.linkId,"home");
+  assert.equal(f.docs.get(`transactions/${legacyId}`)._deleted,true);
+  assert.equal(f.docs.get("transactions/manual")._deleted,false);
+});
+
+test("a newer same-day observation survives an older invocation and an unavailable bank balance creates no report",async()=>{
+  const f=fixture(),link=await linked(f);
+  await f.store.write("account_balance_snapshots","abs_a.2026-10-16",{id:"abs_a.2026-10-16",household_id:"home",account_id:"a",date:"2026-10-16",currency:"USD",balance:12345,observed_at:Date.UTC(2026,9,16)+1000,source:"plaid"},null);
+  await f.client.sync(link.linkId,"home"); assert.equal(balance(f,"a"),12345);
+  await f.client.sync(link.linkId,"home");
+  f.advance(); f.providers[0].balances.current=null;
+  await assert.rejects(f.client.sync(link.linkId,"home",true),/current balance/);
+  assert.equal(f.docs.has("account_balance_snapshots/abs_a.2026-10-17"),false);
+  assert.equal(balance(f,"a"),12345);
 });

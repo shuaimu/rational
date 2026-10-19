@@ -97,6 +97,7 @@ test("transactions are created with splits that must add up, edited, and deleted
   await expect(row).toContainText("for the fence");
 
   // The month filter narrows the list; the account filter too.
+  await page.getByTestId("filters-toggle").click();
   await page.getByRole("combobox", { name: "Filter by month" }).selectOption("2026-08");
   await expect(row).toBeVisible();
   await page.getByRole("combobox", { name: "Filter by month" }).selectOption("2026-06");
@@ -105,6 +106,7 @@ test("transactions are created with splits that must add up, edited, and deleted
   await page.getByRole("combobox", { name: "Filter by account" }).selectOption({ label: "Wallet" });
   await expect(row).toHaveCount(0);
   await page.getByRole("combobox", { name: "Filter by account" }).selectOption("");
+  await page.getByRole("button", { name: "Done", exact: true }).click();
 
   await row.getByRole("button", { name: "Edit" }).click();
   await editor.getByLabel("Description").fill("Hardware, paint, and brushes");
@@ -123,8 +125,10 @@ test("offline writes are kept locally, shown as waiting, and pushed on reconnect
   await signInFresh(page);
   await page.goto("/#/transactions");
   const accepted = (await diagnostics(page)).acceptedWrites;
-  await page.getByRole("button", { name: "Go offline" }).click();
-  await expect(page.getByTestId("offline-banner")).toContainText("offline");
+  await expect(page.getByRole("button", { name: "Go offline" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Go online" })).toHaveCount(0);
+  await page.evaluate(() => window.rational.setOnline(false));
+  await expect(page.getByTestId("offline-banner")).toContainText(/Offline.*reconnect/);
 
   await page.getByRole("button", { name: "New transaction" }).click();
   const editor = page.getByRole("form", { name: "Transaction editor" });
@@ -135,7 +139,7 @@ test("offline writes are kept locally, shown as waiting, and pushed on reconnect
   await expect(page.getByTestId("pending-writes")).toContainText("1 change waiting");
   expect((await diagnostics(page)).acceptedWrites).toBe(accepted);
 
-  await page.getByRole("button", { name: "Go online" }).click();
+  await page.evaluate(() => window.rational.setOnline(true));
   await expect(page.getByTestId("offline-banner")).toHaveCount(0);
   await expect.poll(async () => (await diagnostics(page)).acceptedWrites).toBe(accepted + 1);
   await expect.poll(async () => (await diagnostics(page)).pendingWrites).toBe(0);

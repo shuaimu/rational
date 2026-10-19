@@ -25,7 +25,7 @@ import {
   type TagEncoding,
 } from "../../functions/shared/monarch.js";
 import type { RationalApp } from "../data/rational.js";
-import type { ImportSummary } from "../data/monarch.js";
+import { useCloudImports } from "./cloud-imports.js";
 import type { Account } from "../model/types.js";
 import { formatMinorUnits } from "../selectors/money.js";
 
@@ -62,8 +62,8 @@ export function MonarchImportPanel({
   const [encoding, setEncoding] = useState<TagEncoding>("single"),
     [filename, setFilename] = useState("");
   const [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [jobs, setJobs] = useState<ImportSummary[]>([]);
+    [busy, setBusy] = useState(false);
+  const { jobs, checkedAt, error: statusError, refresh: refreshJobs } = useCloudImports();
   const [sourceReviews, setSourceReviews] = useState<
     { id: string; transactionId: string; original: SourceRow; incoming: SourceRow }[]
   >([]);
@@ -72,7 +72,7 @@ export function MonarchImportPanel({
   const householdId = app.state.currentHouseholdId;
   const refresh = async () => {
     if (app.monarch && householdId) {
-      setJobs((await app.monarch.list(householdId)).jobs);
+      await refreshJobs();
       setSourceReviews(
         (await app.monarch.call<{ reviews: typeof sourceReviews }>("source-reviews", householdId))
           .reviews,
@@ -181,8 +181,8 @@ export function MonarchImportPanel({
     setBusy(true);
     setError("");
     try {
-      const result = await app.monarch.action(householdId, id, action);
-      setJobs((jobs) => jobs.map((job) => (job.id === id ? result : job)));
+      await app.monarch.action(householdId, id, action);
+      await refresh();
     } catch (error) {
       setError(error instanceof Error ? error.message : "Import could not continue.");
     } finally {
@@ -195,8 +195,8 @@ export function MonarchImportPanel({
         <CardHeader>
           <h2>Import Monarch history</h2>
           <p className="text-sm text-muted-foreground">
-            Export transactions from Monarch, preview their accounts and categories, then import
-            history before linking your banks.
+            Upload a Monarch export or a CSV converted to the same format, preview its accounts
+            and categories, then import history before linking your banks.
           </p>
         </CardHeader>
         <CardContent className="grid gap-4">
@@ -540,6 +540,10 @@ export function MonarchImportPanel({
           </CardContent>
         </Card>
       ))}
+      {checkedAt || statusError ? <p className="text-sm text-muted-foreground">
+        {statusError || "Cloud progress refreshes automatically every minute."}
+        {checkedAt ? ` Last checked ${new Date(checkedAt).toLocaleTimeString()}.` : ""}
+      </p> : null}
       {jobs.map((job) => (
         <Card key={job.id}>
           <CardHeader>

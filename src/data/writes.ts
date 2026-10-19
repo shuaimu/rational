@@ -1,6 +1,7 @@
 import type { MangoQuerySelector, RxCollection, RxDocument } from "rxdb";
 
 import { defaultTaxonomyDocuments } from "../../scripts/default-taxonomy.mjs";
+import { importedTaxonomyPlan } from "../selectors/taxonomy.js";
 import { randomId } from "../model/ids.js";
 import {
   type Account,
@@ -217,9 +218,8 @@ export interface TransactionInput {
   readonly recurrence_id?: string;
   readonly transfer_id?: string;
   /**
-   * Absent means "needs review". `createTransaction` sets it unless the
-   * caller passes `false`, which is how an import or a sync says the
-   * household has not looked at this yet; `false` itself is never stored.
+   * True means reviewed; false explicitly requests review. An absent imported
+   * status is neutral. `createTransaction` defaults to reviewed for manual entry.
    */
   readonly reviewed?: boolean;
   readonly hidden?: boolean;
@@ -543,9 +543,9 @@ export class HouseholdWrites {
     return changed;
   }
 
-  /** `false` removes the flag: absence is what "needs review" means. */
+  /** Preserve an explicit review request independently of import/provider identity. */
   async markReviewed(ids: readonly string[], reviewed: boolean): Promise<number> {
-    return this.bulkPatchTransactions(ids, { reviewed: reviewed ? true : null });
+    return this.bulkPatchTransactions(ids, { reviewed });
   }
 
   /** `false` removes the flag; a shown transaction simply lacks it. */
@@ -1032,7 +1032,7 @@ export class HouseholdWrites {
    */
   async createCategory(
     name: string,
-    categoryKind: CategoryKind,
+    categoryKind: CategoryKind | undefined,
     options: CategoryOptions = {},
   ): Promise<Category> {
     if (name.trim() === "") throw new ValidationError("a category needs a name");
@@ -1043,7 +1043,7 @@ export class HouseholdWrites {
       this.#stamp<TaxonomyEntry>(randomId("cat"), {
         kind: "category",
         name: name.trim(),
-        category_kind: categoryKind,
+        ...(categoryKind === undefined ? {} : { category_kind: categoryKind }),
         ...extras,
       }),
     )) as Category;
@@ -1054,22 +1054,22 @@ export class HouseholdWrites {
       throw new ValidationError("a category needs a name");
     }
     validateTaxonomyPatch(patch);
-    // An empty group is no group; and a category may only move into a group
-    // of its own kind, or an income category would sit under Housing.
-    const cleaned: Patch<TaxonomyEntry> =
-      patch.parent_id === "" ? { ...patch, parent_id: null } : patch;
-    if (typeof cleaned.parent_id === "string") {
-      const current = await this.#requireKind(id, "category");
-      const kind =
-        typeof cleaned.category_kind === "string" ? cleaned.category_kind : current.category_kind;
-      await this.#requireGroup(cleaned.parent_id, kind);
-    }
+    const current = await this.#requireKind(id, "category");
+    const cleaned: Patch<TaxonomyEntry> = {
+      ...patch,
+      ...(typeof patch.name === "string" ? { name: patch.name.trim() } : {}),
+      ...(patch.parent_id === "" ? { parent_id: null } : {}),
+      // A deliberate move stays deliberate when the import repair next runs.
+      ...(patch.parent_id !== undefined && patch.sort_order === undefined ? { sort_order: 1000 } : {}),
+    };
+    const next = applyPatch(current, cleaned);
+    if (next.parent_id !== undefined) await this.#requireGroup(next.parent_id, next.category_kind);
     return (await this.#patch("taxonomy", id, cleaned)) as Category;
   }
 
   async createGroup(
     name: string,
-    categoryKind: CategoryKind,
+    categoryKind: CategoryKind | undefined,
     sortOrder?: number,
   ): Promise<CategoryGroup> {
     if (name.trim() === "") throw new ValidationError("a group needs a name");
@@ -1081,7 +1081,7 @@ export class HouseholdWrites {
       this.#stamp<TaxonomyEntry>(randomId("grp"), {
         kind: "group",
         name: name.trim(),
-        category_kind: categoryKind,
+        ...(categoryKind === undefined ? {} : { category_kind: categoryKind }),
         ...(sortOrder === undefined ? {} : { sort_order: sortOrder }),
       }),
     )) as CategoryGroup;
@@ -1092,9 +1092,9 @@ export class HouseholdWrites {
       throw new ValidationError("a group needs a name");
     }
     validateTaxonomyPatch(patch);
-    if (typeof patch.category_kind === "string") {
+    if (patch.category_kind !== undefined) {
       const current = await this.#requireKind(id, "group");
-      if (current.category_kind !== patch.category_kind) {
+      if (current.category_kind !== (patch.category_kind ?? undefined)) {
         const members = await this.#find("taxonomy", { kind: "category", parent_id: id });
         if (members.length > 0) {
           throw new ValidationError("move the group's categories before changing its kind");
@@ -1273,6 +1273,47 @@ export class HouseholdWrites {
       this.#context.noteLocalWrite();
     }
     return result.success.length;
+  }
+
+  /** Repair import metadata only after the complete household replica has arrived. */
+  async organizeImportedCategories(): Promise<number> {
+    const taxonomy = this.#collection("taxonomy");
+    const entries = (await taxonomy.find().exec()).map(doc => doc.toJSON() as TaxonomyEntry);
+    if (!entries.some(entry => entry.kind === "category" && entry.id.startsWith("tax_m_"))) return 0;
+    const referenced = new Set<string>();
+    const add = (id: string | undefined) => { if (id) referenced.add(id); };
+    for (const doc of await this.#collection("transactions").find().exec()) {
+      const tx = doc.toJSON(); add(tx.category_id);
+      for (const split of tx.splits) add(split.category_id);
+    }
+    for (const doc of await this.#collection("budgets").find().exec()) add(doc.toJSON().category_id);
+    for (const doc of await this.#collection("recurrences").find().exec()) add(doc.toJSON().category_id);
+    for (const doc of await this.#collection("rules").find().exec()) {
+      add(doc.toJSON().match.category_id); add(doc.toJSON().set_category_id);
+    }
+    const plan = importedTaxonomyPlan(entries, this.#context.householdId, this.#context.now(), referenced);
+    if (plan.created.length) {
+      const result = await taxonomy.bulkInsert([...plan.created]);
+      const failed = result.error.find(error => error.status !== 409);
+      if (failed) throw new Error(`Creating category groups failed: ${failed.status}`);
+      result.success.forEach(() => this.#context.noteLocalWrite());
+    }
+    for (const { id, ...patch } of plan.updates) {
+      const doc = await taxonomy.findOne(id).exec();
+      const group = await taxonomy.findOne(patch.parent_id).exec();
+      if (!doc || !group || group.toJSON().kind !== "group" || group.toJSON().archived || group.toJSON().category_kind !== doc.toJSON().category_kind) continue;
+      await doc.incrementalModify(current => current.parent_id !== undefined || current.sort_order !== undefined ? current :
+        { ...current, ...patch, updated_at: this.#context.now() });
+      this.#context.noteLocalWrite();
+    }
+    for (const id of plan.archived) {
+      const doc = await taxonomy.findOne(id).exec();
+      if (!doc) continue;
+      await doc.incrementalModify(current => current.updated_at !== current.created_at ? current :
+        { ...current, archived: true, updated_at: this.#context.now() });
+      this.#context.noteLocalWrite();
+    }
+    return plan.updates.length + plan.archived.length;
   }
 
   async createTag(name: string): Promise<Tag> {
@@ -1668,7 +1709,7 @@ function validateTransaction(
     rule_id?: string;
     recurrence_id?: string;
     transfer_id?: string;
-    reviewed?: true;
+    reviewed?: boolean;
     hidden?: true;
     adjustment?: true;
   } = {};
@@ -1692,10 +1733,8 @@ function validateTransaction(
   if (input.transfer_id !== undefined && input.transfer_id !== "") {
     optional.transfer_id = input.transfer_id;
   }
-  // The flags are stored only when set: `reviewed: false` would be a second
-  // way of saying "needs review", and two spellings of one state is how two
-  // devices come to disagree about it.
-  if (input.reviewed === true) optional.reviewed = true;
+  // False is an explicit review request; absence preserves a neutral source status.
+  if (input.reviewed !== undefined) optional.reviewed = input.reviewed;
   if (input.hidden === true) optional.hidden = true;
   if (input.adjustment === true) optional.adjustment = true;
   return { ...fields, ...optional };

@@ -38,7 +38,7 @@ async function openSettingsPage(page: Page, label: string): Promise<void> {
     .click();
 }
 
-test("a deployment without Plaid credentials never offers the option, and everything else stands", async ({
+test("a deployment without Plaid credentials explains availability and can retry", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -68,12 +68,42 @@ test("a deployment without Plaid credentials never offers the option, and everyt
   // The simulator's own form is whole; the Plaid one simply is not offered.
   await expect(page.getByRole("form", { name: "Connect an account" })).toBeVisible();
   await expect(page.getByTestId("plaid-connect")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Link a bank", exact: true })).toBeVisible();
+  await expect(page.getByText("Bank linking is not configured for this deployment.", { exact: false })).toBeVisible();
+  await page.evaluate(() => { if (window.rationalFake) window.rationalFake.plaidConfigured = true; });
+  await page.getByRole("button", { name: "Retry bank linking" }).click();
+  await expect(page.getByRole("button", { name: "Connect through Plaid", exact: true })).toBeEnabled();
   // Nothing has asked to be told about a failing sync yet, and the screen says so.
   await expect(page.getByTestId("sync-error-hint")).toHaveAttribute("data-alert", "unset");
   await expect(page.getByTestId("sync-error-hint").getByRole("link")).toHaveAttribute(
     "href",
     "#/settings/notifications",
   );
+});
+
+test("a failed bank status check keeps the linking entry point and supports retry", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() => window.rational !== undefined);
+  await page.getByLabel("Email").fill("status-retry@rational.test");
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Create account" }).click();
+  await settle(page);
+  await page.evaluate(() => {
+    const app = window.rational as unknown as { plaid: { status: () => Promise<unknown> } };
+    const original = app.plaid.status.bind(app.plaid);
+    let attempts = 0;
+    app.plaid.status = async () => {
+      if (attempts++ === 0) throw new Error("Cloud function is busy. Please retry.");
+      return original();
+    };
+  });
+  await openSettingsPage(page, "Connections");
+  await expect(page.getByRole("heading", { name: "Link a bank", exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("Cloud function is busy. Please retry.");
+  await expect(page.getByTestId("plaid-connect")).toHaveCount(0);
+  await page.getByRole("button", { name: "Retry bank linking" }).click();
+  await expect(page.getByRole("button", { name: "Connect through Plaid", exact: true })).toBeEnabled();
+  await page.screenshot({ path: ".local/bank-linking-restored.png" });
 });
 
 test("linking through Plaid lands a connection and its first sync, and no token ever shows", async ({
@@ -128,7 +158,8 @@ test("linking through Plaid lands a connection and its first sync, and no token 
   await expect(plaidForm).toBeVisible();
   await plaidForm.getByRole("button", { name: "Connect through Plaid" }).click();
   const matching = page.getByRole("form", { name: "Add First Platypus Bank accounts" });
-  await expect(matching.getByRole("combobox")).toHaveValue("__create__");
+  await expect(matching.getByRole("combobox")).toHaveValue("");
+  await matching.getByRole("combobox").selectOption("__create__");
   await matching.getByRole("button", { name: "Add selected accounts" }).click();
 
   // The connection lands with the institution's real name, a connected

@@ -16,7 +16,7 @@ async function signInFresh(page: Page): Promise<void> {
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Create account" }).click();
   await page.waitForFunction(() => window.rational.state.phase === "ready");
-  await expect(page.getByRole("heading", { name: "Investments", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Household holdings", exact: true })).toBeVisible();
   await page.waitForFunction(() => window.rational.household?.session !== null);
   await page.evaluate(() => window.rational.waitForSync());
 }
@@ -49,7 +49,7 @@ test("a holding values its account, and a price update moves it with no transact
   const transactionsBefore = await transactionCount(page);
 
   await page.goto("/#/investments");
-  await expect(page.getByRole("heading", { name: "Investments", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Household holdings", exact: true })).toBeVisible();
   // The demo's two positions are an ETF and a bond; the total is the brokerage's balance.
   const allocation = page.getByTestId("allocation-USD");
   await expect(allocation.locator("li[data-key]")).toHaveCount(2);

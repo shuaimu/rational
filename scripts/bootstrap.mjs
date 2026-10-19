@@ -587,6 +587,8 @@ function deploySyncFunction() {
     "--collection",
     "accounts",
     "--collection",
+    "account_balance_snapshots",
+    "--collection",
     "plaid_items",
     "--collection",
     "import_records",
@@ -600,6 +602,8 @@ function deploySyncFunction() {
     "create",
     "--operation",
     "update",
+    "--operation",
+    "delete",
     ...tenant,
   ]);
   const secretName = "SYNC_SERVICE_KEY";
@@ -768,6 +772,8 @@ function deployNightlyFunction() {
     "rules",
     "--collection",
     "accounts",
+    "--collection",
+    "account_balance_snapshots",
     "--collection",
     "net_worth_snapshots",
     "--collection",

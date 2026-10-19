@@ -3,8 +3,9 @@ import { createRxDatabase, removeRxDatabase, type RxDatabase, type RxCollection,
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
 import { replicateRxCollection, type RxReplicationState } from 'rxdb/plugins/replication';
 import { DexieReplicationStatePersistence, DexieReplicationStateStore, MakoLiveStreamGroup, createMakoPullOptions, makoReplicationErrorFrom, type MakoCheckpoint } from '@mako-cloud/rxdb';
-import Dexie, { type Table } from 'dexie';
-import { auth, collectionConfig, getAuthState, initializeAuth, onClearProtectedState, requireOwnerScope, signOut, subscribeAuth } from './auth';
+import Dexie, { liveQuery, type Table } from 'dexie';
+import { defer } from 'rxjs';
+import { auth, collectionConfig, getAuthState, initializeAuth, onClearProtectedState, requireOwnerScope, renewSession, subscribeAuth } from './auth';
 import { digest, IncompleteManifest, InvalidManifest, materialize, validateHead, validateTables, type ContentDoc, type LocalGeneration, type PortfolioHead } from './manifest';
 import allSchemas from './mako-schemas.json';
 import { isCloudApi } from './runtime';
@@ -108,12 +109,27 @@ async function recover(current: Runtime, reason: string, security = false): Prom
   if (current.recovery) return current.recovery;
   current.recovery = (async () => {
     update({ phase: 'recovering', message: 'Rebuilding the authorized local cache…' });
-    if (security) { console.warn('Investment session reset', { source: 'replication', reason }); await signOut(); return; }
+    if (security) {
+      update({ readable: false });
+      try { await renewSession(); }
+      catch {
+        if (getAuthState().status === 'ready') update({ phase: 'offline', message: 'Authorization refresh is unavailable; synchronization will retry.' });
+        return;
+      }
+      if (getAuthState().status !== 'ready') return;
+      if (!currentScope(current)) { await startReplication(); return; }
+      if (reason === 'unauthenticated' || reason === 'permission_denied') {
+        current.live?.close();
+        await Promise.all(current.replicas.map(replica => replica.cancel()));
+        update({ phase: 'error', message: 'Portfolio access was denied. Your Rational sign-in is still active.' });
+        return;
+      }
+    }
     await current.meta.state.put({ key: 'reset', value: reason });
     await stop(current); runtime = undefined; opening = undefined;
     await removeDescriptor(current.descriptor, false);
     await startReplication();
-  })().catch(() => { update({ phase: 'error', message: 'Cache recovery failed. Close other RobinLab tabs and reload.' }); });
+  })().catch(() => { update({ phase: 'error', message: 'Cache recovery failed. Close other RobinLab tabs and reload.' }); }).finally(() => { current.recovery = null; });
   return current.recovery;
 }
 function replicationError(current: Runtime, raw: unknown, collectionId: string) {
@@ -149,6 +165,14 @@ async function openRuntime(): Promise<Runtime> {
   const current: Runtime = { transientErrors: new Set(), prices, priceReady: new Set(), pricing: false, priceAgain: false, scope, descriptor, meta, db, durable, active: active ?? null, replicas: [], live: null, stopped: false, stopping: null, building: false, again: false, closeSubscriptions: [], recovery: null };
   if (getAuthState().scope !== scope || getAuthState().status !== 'ready') { await stop(current); throw new Error('Application session changed.'); }
   runtime = current;
+  // Only the elected tab finishes replication. Followers observe the verified
+  // price generation it publishes locally instead of waiting on their own pull.
+  const sharedPrices = liveQuery(() => meta.state.get('prices')).subscribe(row => {
+    if (!currentScope(current) || db.isLeader() || !row?.value) return;
+    current.prices = row.value as PriceView;
+    update({ readable: current.active !== null, version: current.active?.version ?? 0 });
+  });
+  current.closeSubscriptions.push(() => sharedPrices.unsubscribe());
   const configs = (Object.keys(schemas) as (keyof Collections)[]).map((name) => ({ ...collectionConfig(name), pullBatchSize: name === 'portfolio_public' ? 20 : name === 'historical_prices' ? 500 : 100 }));
   const live = new MakoLiveStreamGroup(configs, auth, { onResyncReason: (reason) => {
     if (reason === 'authorization_epoch_changed') void recover(current, reason, true);
@@ -158,7 +182,7 @@ async function openRuntime(): Promise<Runtime> {
   for (const config of configs) {
     const collection = db.collections[config.collectionId as keyof Collections] as RxCollection<unknown>;
     const persistence = new DexieReplicationStatePersistence(config, { store: durable });
-    const pull = createMakoPullOptions<unknown>(config, auth, { stream$: live.stream$(config.collectionId), checkpoints: persistence.checkpoint });
+    const pull = createMakoPullOptions<unknown>(config, auth, { stream$: defer(() => live.stream$(config.collectionId)), checkpoints: persistence.checkpoint });
     const original = pull.handler;
     pull.handler = async (...args) => {
       try {
@@ -185,7 +209,7 @@ async function openRuntime(): Promise<Runtime> {
   // interrupted. Periodically pull from durable checkpoints so missed stream
   // notifications cannot leave a readable portfolio indefinitely stale.
   const catchUp = setInterval(() => {
-    if (currentScope(current) && navigator.onLine) for (const replica of current.replicas) replica.reSync();
+    if (currentScope(current) && db.isLeader() && navigator.onLine) for (const replica of current.replicas) replica.reSync();
   }, 30_000);
   current.closeSubscriptions.push(() => clearInterval(catchUp));
   await meta.state.delete('reset');

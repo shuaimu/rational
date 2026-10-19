@@ -291,7 +291,7 @@ function syncStore(reason: string): PlaidStore {
       const documents: FunctionDocument[] = [];
       let cursor: string | null = null;
       for (let page = 0; page < 1000; page++) {
-        const result = await service(reason).documents(collection).query({ predicates: [{ field, operator: "eq", value }], sort: [], cursor, limit: 200 });
+        const result = await service(reason, collection).documents(collection).query({ predicates: [{ field, operator: "eq", value }], sort: [], cursor, limit: 200 });
         documents.push(...result.documents);
         cursor = result.nextCursor ?? null;
         if (cursor === null) return documents;
@@ -704,12 +704,20 @@ function syncCredential(): string {
   try { const key = Deno.env.get("IMPORT_SYNC_SERVICE_KEY"); if (key) return key; } catch { /* older deployments */ }
   return serviceCredential();
 }
-function service(reason: string): ServiceFunctionClient {
+function credentialFor(collectionId?: string): string {
+  if (collectionId === "account_balance_snapshots") {
+    // Bootstrap may instead grant this collection to the function's main credential.
+    try { const key = Deno.env.get("BALANCE_SERVICE_KEY"); if (key) return key; } catch { /* secret not injected */ }
+  }
+  return syncCredential();
+}
+
+function service(reason: string, collectionId?: string): ServiceFunctionClient {
   return createServiceClient({
     endpoint: environment("MAKO_API_URL"),
     projectId: environment("MAKO_PROJECT_ID"),
     environmentId: environment("MAKO_ENVIRONMENT_ID"),
-    serviceCredential: syncCredential(),
+    serviceCredential: credentialFor(collectionId),
     reason,
     // A service request's quota reservation is keyed by its request id, and a
     // reused one is refused as a conflict (findings log #7a), so every call
@@ -723,7 +731,7 @@ async function read(
   collectionId: string,
   documentId: string,
 ): Promise<FunctionDocument | null> {
-  return service(reason).documents(collectionId).get(documentId);
+  return service(reason, collectionId).documents(collectionId).get(documentId);
 }
 
 async function write(
@@ -733,7 +741,7 @@ async function write(
   body: JsonObject,
   expectedRevision: string | null,
 ): Promise<void> {
-  await service(reason)
+  const result = await service(reason, collectionId)
     .documents(collectionId)
     .mutate(documentId, {
       mutationId: `rational-sync-${randomSuffix()}${randomSuffix()}`,
@@ -742,6 +750,9 @@ async function write(
       schemaVersion: collectionId === PLAID_ITEMS ? 4 : SCHEMA_VERSION,
       body,
     });
+  if (result.status === "conflict") {
+    throw new Error("The document changed during synchronization. Existing changes were preserved; retry this phase.");
+  }
 }
 
 /** A delete names the revision it read, like every other write. */
@@ -751,7 +762,7 @@ async function removeDocument(
   documentId: string,
   existing: FunctionDocument,
 ): Promise<void> {
-  await service(reason)
+  const result = await service(reason, collectionId)
     .documents(collectionId)
     .mutate(documentId, {
       mutationId: `rational-sync-${randomSuffix()}${randomSuffix()}`,
@@ -760,6 +771,7 @@ async function removeDocument(
       schemaVersion: collectionId === PLAID_ITEMS ? 4 : SCHEMA_VERSION,
       body: existing.body,
     });
+  if (result.status === "conflict") throw new Error("The legacy balance record changed; retry cleanup.");
 }
 
 /** The scheduler may name the day, so a test can ask for a fixed window. */

@@ -93,7 +93,7 @@ async function downloadedLines(download: Download): Promise<string[]> {
 test("the household's transactions and accounts are exported as CSV files", async ({ page }) => {
   await signInFresh(page);
   await openSettingsPage(page, "Data");
-  await expect(page.getByRole("heading", { name: "Data" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Data", exact: true })).toBeVisible();
   // The preview says what the file will hold before anything is downloaded.
   await expect(page.getByTestId("transactions-row-count")).toHaveText("60 rows");
   await expect(page.getByTestId("accounts-row-count")).toHaveText("7 rows");

@@ -6,6 +6,7 @@ import {
   type NormalizedMakoRxdbClientConfig,
   type MakoUserSession,
 } from '@mako-cloud/rxdb';
+import { retryableRefreshFetch } from './auth-refresh.js';
 
 // Retain Rational's existing persistence key so installed sessions survive the
 // addition of Investment. Project and environment identifiers scope credentials.
@@ -27,9 +28,13 @@ export class SharedAuthClient extends MakoAuthClient {
     fetch?: typeof globalThis.fetch;
   } = {}) {
     const persistence = options.persistence ?? sessionPersistence(config);
-    super(config, { ...options, persistence });
+    const durable = persistence instanceof BrowserAuthSessionPersistence && persistence.durable;
+    const refreshStorage = durable && typeof window !== 'undefined' ? window.localStorage : null;
+    super(config, { ...options, persistence, fetch: retryableRefreshFetch(
+      options.fetch ?? globalThis.fetch, `${sessionKey(config)}.refresh-request`, refreshStorage,
+    ) });
     this.lockKey = `${sessionKey(config)}.renew`;
-    this.durable = persistence instanceof BrowserAuthSessionPersistence && persistence.durable;
+    this.durable = durable;
     this.subscribe(event => {
       if (event.kind === 'session' || event.kind === 'signed_out') this.adoptedUser = event.session?.user.id ?? null;
     });

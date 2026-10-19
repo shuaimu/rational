@@ -13,6 +13,7 @@ import {
   budgetSubjectId,
   copyMonthPlan,
   incomeInMonth,
+  isCashFlowCategory,
   monthBudgetModel,
   nonMonthlyShare,
 } from "../functions/shared/budgets.ts";
@@ -278,6 +279,33 @@ test("the month model: unbudgeted spending, totals, and what is left to budget",
     remaining: 34_500,
     leftToBudget: 240_000,
   });
+});
+
+test("Buy and Sell trading principal is excluded from budget totals without excluding similarly named categories", () => {
+  const categories = [
+    { id: "buy", name: " Buy " },
+    { id: "sell", name: "SELL", category_kind: "income" },
+    { id: "goods", name: "Buy Goods", category_kind: "expense" },
+  ];
+  assert.equal(isCashFlowCategory(categories[0]), false);
+  assert.equal(isCashFlowCategory(categories[1]), false);
+  assert.equal(isCashFlowCategory(categories[2]), true);
+  assert.equal(isCashFlowCategory({ name: "Sell Goods" }), true);
+  const model = monthBudgetModel({
+    categories, groups: [], budgets: [], month: "2026-08", currency: "USD", plannedGoalMonthly: 0,
+    transactions: [
+      transaction({ date: "2026-08-01", amount: -500_000, category_id: "buy" }),
+      transaction({ date: "2026-08-02", amount: 700_000, category_id: "sell" }),
+      transaction({ date: "2026-08-03", amount: -101_000, category_id: "buy", splits: [
+        { category_id: "buy", amount: -100_000 },
+        { category_id: "goods", amount: -1_000 },
+      ] }),
+    ],
+  });
+  assert.equal(model.income.actual, 0);
+  assert.equal(model.totals.spent, 1_000);
+  assert.equal(model.flex.flexible.spent, 1_000);
+  assert.deepEqual(model.unbudgeted, [{ categoryId: "goods", spent: 1_000 }]);
 });
 
 test("the month model: flex mode is the same budgets read by bucket", () => {

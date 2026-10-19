@@ -5,13 +5,9 @@
  * One definition of an account's balance, for the screens and the nightly
  * snapshot alike.
  *
- * A balance is what the bank would say: the opening balance plus every
- * transaction booked to the account -- transfers, hidden ones, and balance
- * updates included, because they moved the account even where they moved no
- * money of the household's -- plus, for an investment or crypto account, what
- * its holdings are worth at their last price. A snapshot written from this
- * and an account page drawn from this show the same number, which is the
- * point of having one place to compute it.
+ * A reported source balance is authoritative. With no source observation,
+ * derive the balance from the opening amount, posted transactions and holdings.
+ * Synthetic bank reconciliation adjustments are obsolete and never counted.
  */
 
 /** What valuation reads of a holding: units held and minor units per unit. */
@@ -23,6 +19,8 @@ export interface HoldingLike {
 /** What the balance math reads of an account. */
 export interface BalanceAccount {
   readonly id: string;
+  readonly household_id?: string;
+  readonly currency?: string;
   readonly opening_balance: number;
   readonly holdings?: readonly HoldingLike[];
 }
@@ -31,6 +29,32 @@ export interface BalanceAccount {
 export interface BalanceTransaction {
   readonly account_id: string;
   readonly amount: number;
+  readonly pending?: boolean;
+  readonly adjustment?: boolean;
+  readonly external_id?: string;
+  readonly description?: string;
+}
+
+/** A provider observation, never a transaction or an inferred daily balance. */
+export interface ReportedBalance {
+  readonly account_id: string;
+  readonly household_id: string;
+  readonly currency: string;
+  readonly date: string;
+  readonly balance: number;
+  readonly observed_at: number;
+  readonly source: string;
+}
+
+export function isBankReconciliation(transaction: BalanceTransaction): boolean {
+  return transaction.adjustment === true && transaction.description === "Bank balance reconciliation" &&
+    transaction.external_id?.startsWith("balance-") === true;
+}
+
+export function latestReportedBalance<T extends ReportedBalance>(account: BalanceAccount, reports: readonly T[]): T | undefined {
+  return reports.filter(report => report.account_id === account.id && report.household_id === account.household_id &&
+    report.currency === account.currency && Number.isSafeInteger(report.balance))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.observed_at - a.observed_at)[0];
 }
 
 /** What net worth reads of an account, over what a balance needs. */
@@ -63,18 +87,30 @@ export function holdingsValue(holdings: ReadonlyArray<HoldingLike> | undefined):
   return total;
 }
 
-/** Balance per account id: opening balance, every transaction, and the holdings' value. */
+/** Current balances: latest source observation, otherwise the posted ledger. */
 export function accountBalances(
   accounts: readonly BalanceAccount[],
   transactions: readonly BalanceTransaction[],
+  reports: readonly ReportedBalance[] = [],
 ): Map<string, number> {
   const balances = new Map<string, number>();
   for (const account of accounts) {
     balances.set(account.id, account.opening_balance + holdingsValue(account.holdings));
   }
   for (const transaction of transactions) {
+    if (transaction.pending || isBankReconciliation(transaction)) continue;
     const current = balances.get(transaction.account_id);
     if (current !== undefined) balances.set(transaction.account_id, current + transaction.amount);
+  }
+  // Reported balances are authoritative, even while transactions are still arriving.
+  const byAccount = new Map<string, ReportedBalance[]>();
+  for (const report of reports) {
+    const group = byAccount.get(report.account_id) ?? [];
+    group.push(report); byAccount.set(report.account_id, group);
+  }
+  for (const account of accounts) {
+    const report = latestReportedBalance(account, byAccount.get(account.id) ?? []);
+    if (report) balances.set(account.id, report.balance);
   }
   return balances;
 }

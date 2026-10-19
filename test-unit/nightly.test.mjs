@@ -18,6 +18,14 @@ import {
   detectRecurrences,
 } from "../functions/shared/recurrences.ts";
 
+test("nightly totals and account history use source observations instead of ledger adjustments", () => {
+  const account = document({ id: "a", household_id: "home", type: "checking", currency: "USD", opening_balance: 999999 });
+  const transactions = [document({ account_id: "a", amount: -500, date: "2026-10-01" })];
+  const reports = [document({ account_id: "a", household_id: "home", date: "2026-10-02", balance: 12345, currency: "USD", observed_at: 1, source: "plaid" })];
+  assert.deepEqual(netWorth("USD", [account], transactions, reports), { assets: 12345, liabilities: 0 });
+  assert.deepEqual(snapshotBalances([account], transactions, reports), [{ account_id: "a", balance: 12345 }]);
+});
+
 /**
  * The nightly job runs while nobody is watching, so what it must never do
  * matters more than what it does: it must not overrule a filing the person

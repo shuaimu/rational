@@ -62,7 +62,8 @@ export function InvestmentsScreen({
     session.collection("accounts")?.find({ sort: [{ name: "asc" }] }) ?? null,
   );
   const transactions = useQuery(session.collection("transactions")?.find() ?? null);
-  const balances = selectAccountBalances(accounts, transactions);
+  const reportedBalances = useQuery(session.collection("account_balance_snapshots")?.find() ?? null);
+  const balances = selectAccountBalances(accounts, transactions, reportedBalances);
   const totals = selectInvestmentsTotal(accounts, balances);
   const rows = selectHouseholdHoldings(accounts);
   const investmentAccounts = useMemo(

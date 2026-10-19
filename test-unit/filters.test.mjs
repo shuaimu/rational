@@ -181,7 +181,7 @@ test("every filter narrows the list as its link says", () => {
   assert.deepEqual(apply({ from: "2026-08-08", to: "2026-08-10" }), ["t12", "t11", "t10"]);
   assert.deepEqual(apply({ month: "2026-07" }), ["t9"]);
   assert.deepEqual(apply({ amountMin: 1_000, amountMax: 5_000 }), ["t8", "t3", "t2"]);
-  assert.deepEqual(apply({ review: "needs" }), ["t11", "t10"]);
+  assert.deepEqual(apply({ review: "needs" }), ["t11"], "categorized bank arrivals are neutral");
   assert.deepEqual(apply({ review: "reviewed" }), ["t9"]);
 });
 

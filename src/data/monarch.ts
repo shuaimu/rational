@@ -41,7 +41,7 @@ export class MonarchClient {
       await new Promise(resolve => setTimeout(resolve, Math.min(1000 * 2 ** attempt, 10000)));
     }
     const payload = (await response.json()) as { error?: { message?: string } };
-    if (!response.ok) throw new Error(response.status === 429 ? "A cloud import phase is still running. Refresh imports shortly to see its progress." : payload.error?.message ?? "The cloud import is unavailable.");
+    if (!response.ok) throw new Error(response.status === 429 ? "The cloud is busy with another request. Please retry shortly." : payload.error?.message ?? "The cloud import is unavailable.");
     return payload as T;
   }
   list(householdId: string) {

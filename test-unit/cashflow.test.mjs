@@ -3,7 +3,9 @@ import { test } from "node:test";
 
 import {
   cashFlowSummary,
+  cashFlowExportTransactions,
   categoryTrend,
+  comparisonSeries,
   inRange,
   monthlySeries,
   monthsBetween,
@@ -161,6 +163,97 @@ test("cash flow excludes hidden transactions, transfer legs, and balance updates
   });
 });
 
+test("unpaired transfer categories never become income or spending, including within splits", () => {
+  const categories = [
+    ...taxonomy,
+    entry("cat_transfer", "category", { name: "Transfer", category_kind: "transfer" }),
+    entry("cat_card", "category", { name: "Credit Card Payment", category_kind: "transfer" }),
+    entry("cat_buy", "category", { name: "Other custom outflow" }),
+    entry("cat_sell", "category", { name: "Other custom inflow" }),
+  ];
+  const row = (id, amount, category_id, extra = {}) => transaction(id, "2026-08-15", amount, { category_id, ...extra });
+  const history = [
+    row("income", 50_000, "cat_pay"),
+    row("rent", -10_000, "cat_rent"),
+    row("transfer-in", 150_000_000, "cat_transfer"),
+    row("transfer-out", -140_000_000, "cat_transfer"),
+    row("card-in", 20_000_000, "cat_card"),
+    row("card-out", -30_000_000, "cat_card"),
+    // Parent category is not authoritative once the transaction has splits.
+    row("mixed", -35_000, "cat_transfer", { splits: [
+      { category_id: "cat_groceries", amount: -5_000 },
+      { category_id: "cat_transfer", amount: -30_000 },
+    ] }),
+    row("transfer-only-split", -500, "cat_groceries", { splits: [
+      { category_id: "cat_card", amount: -500 },
+    ] }),
+    row("refund", 2_000, "cat_groceries"),
+    row("custom-buy", -1_000, "cat_buy"),
+    row("custom-sell", 3_000, "cat_sell"),
+  ];
+  const original = structuredClone(history);
+  const summary = summaryFor(cashFlowSummary(history, categories, august), "USD");
+  assert.equal(summary.income, 53_000);
+  assert.equal(summary.spending, 14_000);
+  assert.equal(summary.savings, 39_000);
+  for (const [period, selected] of [["month", "2026-08"], ["quarter", "2026-Q3"], ["year", "2026"]]) {
+    const bar = comparisonSeries(history, categories, period, "USD", "2026-08-20", selected)
+      .find((entry) => entry.period === selected);
+    assert.equal(bar.income, 53_000);
+    assert.equal(bar.spending, 14_000);
+  }
+  assert.equal(monthlySeries(history, categories, august, "USD")[0].spending, 14_000);
+  const slices = spendingBy(history, august, "category", { ...context, categories });
+  assert.equal(slices.reduce((sum, slice) => sum + slice.amount, 0), 14_000);
+  assert.equal(slices.some((slice) => ["cat_transfer", "cat_card"].includes(slice.key)), false);
+  assert.equal(sankeyFlows(history, categories, categories, august).nodes
+    .some((node) => node.label === "Transfer" || node.label === "Credit Card Payment"), false);
+  const exported = cashFlowExportTransactions(history, categories, august);
+  assert.deepEqual(exported.map((entry) => entry.id), ["income", "rent", "mixed", "refund", "custom-buy", "custom-sell"]);
+  assert.equal(exported.find((entry) => entry.id === "mixed").amount, -5_000);
+  assert.equal(exported.find((entry) => entry.id === "mixed").category_id, "cat_groceries");
+  assert.equal(exported.reduce((sum, entry) => sum + entry.amount, 0), 39_000);
+  assert.deepEqual(history, original);
+});
+
+test("Buy and Sell stay custom while their principal is excluded from cash flow, even within splits", () => {
+  const categories = [
+    ...taxonomy,
+    entry("buy", "category", { name: "Buy" }),
+    entry("sell", "category", { name: " Sell " }),
+    entry("goods", "category", { name: "Buy Goods", category_kind: "expense" }),
+  ];
+  const history = [
+    transaction("pay", "2026-08-01", 50_000, { category_id: "cat_pay" }),
+    transaction("trade-buy", "2026-08-02", -500_000, { category_id: "buy" }),
+    transaction("trade-sell", "2026-08-03", 700_000, { category_id: "sell" }),
+    transaction("buy-reversal", "2026-08-04", 30_000, { category_id: "buy" }),
+    transaction("sell-reversal", "2026-08-05", -40_000, { category_id: "sell" }),
+    transaction("goods", "2026-08-06", -2_000, { category_id: "goods" }),
+    transaction("mixed", "2026-08-07", -101_000, { category_id: "buy", splits: [
+      { category_id: "buy", amount: -100_000 },
+      { category_id: "cat_groceries", amount: -1_000 },
+    ] }),
+  ];
+  const before = structuredClone({ categories, history });
+  const summary = summaryFor(cashFlowSummary(history, categories, august), "USD");
+  assert.equal(summary.income, 50_000);
+  assert.equal(summary.spending, 3_000);
+  for (const [period, selected] of [["month", "2026-08"], ["quarter", "2026-Q3"], ["year", "2026"]]) {
+    const bar = comparisonSeries(history, categories, period, "USD", "2026-08-20", selected)
+      .find((entry) => entry.period === selected);
+    assert.equal(bar.income, 50_000);
+    assert.equal(bar.spending, 3_000);
+  }
+  const slices = spendingBy(history, august, "category", { ...context, categories });
+  assert.deepEqual(slices.map((slice) => slice.key), ["goods", "cat_groceries"]);
+  const graph = sankeyFlows(history, categories, categories, august);
+  assert.equal(graph.nodes.some((node) => ["Buy", " Sell "].includes(node.label)), false);
+  const exported = cashFlowExportTransactions(history, categories, august);
+  assert.deepEqual(exported.map((entry) => [entry.id, entry.amount]), [["pay", 50_000], ["goods", -2_000], ["mixed", -1_000]]);
+  assert.deepEqual({ categories, history }, before);
+});
+
 test("the savings rate is of income, clamped to what a rate can be", () => {
   const overspent = cashFlowSummary(
     [transaction("a", "2026-08-01", 1_000), transaction("b", "2026-08-02", -3_000)],
@@ -194,6 +287,39 @@ test("the monthly series has a row for every month of the range, quiet ones incl
       ["2026-08", "EUR"],
       ["2026-08", "USD"],
     ],
+  );
+});
+
+test("comparison bars aggregate all history by calendar period with the same cash-flow exclusions", () => {
+  const history = [
+    ...transactions,
+    transaction("prior-year", "2025-12-31", 10_000, { category_id: "cat_pay" }),
+    transaction("next-year", "2027-01-01", -20_000, { category_id: "cat_rent" }),
+    transaction("split", "2026-10-01", 500, { splits: [
+      { category_id: "cat_pay", amount: 1_000 },
+      { category_id: "cat_groceries", amount: -500 },
+    ] }),
+  ];
+  const years = comparisonSeries(history, taxonomy, "year", "USD", "2026-10-18", "2026");
+  assert.deepEqual(years, [
+    { period: "2025", currency: "USD", income: 10_000, spending: 0, net: 10_000 },
+    { period: "2026", currency: "USD", income: 511_000, spending: 275_500, net: 235_500 },
+    { period: "2027", currency: "USD", income: 0, spending: 20_000, net: -20_000 },
+  ]);
+  const quarters = comparisonSeries(history, taxonomy, "quarter", "USD", "2026-10-18", "2026-Q3");
+  assert.deepEqual(quarters.map((row) => row.period), ["2025-Q4", "2026-Q1", "2026-Q2", "2026-Q3", "2026-Q4", "2027-Q1"]);
+  assert.deepEqual(quarters.find((row) => row.period === "2026-Q3"), {
+    period: "2026-Q3", currency: "USD", income: 510_000, spending: 275_000, net: 235_000,
+  });
+  assert.equal(quarters.find((row) => row.period === "2026-Q1").income, 0);
+  const months = comparisonSeries(history, taxonomy, "month", "USD", "2026-10-18", "2026-08");
+  assert.equal(months.length, 14);
+  assert.equal(months.find((row) => row.period === "2026-08").spending, 272_000);
+  assert.equal(months.find((row) => row.period === "2026-09").net, 0);
+  assert.equal(months.find((row) => row.period === "2026-10").income, 1_000);
+  assert.deepEqual(
+    comparisonSeries([], [], "year", "USD", "2026-10-18", "2026").map((row) => row.period),
+    ["2025", "2026"],
   );
 });
 

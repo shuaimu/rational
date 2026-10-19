@@ -64,7 +64,7 @@ async function createAndAddCollections<Ids extends CollectionId>(
   const database = await createRxDatabase<RationalCollections<Ids>>({
     name,
     storage: getRxStorageDexie(),
-    multiInstance: false,
+    multiInstance: true,
     eventReduce: true,
   });
   const definitions = Object.fromEntries(

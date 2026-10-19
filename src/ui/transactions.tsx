@@ -13,6 +13,10 @@ import {
   Input,
   Label,
   NativeSelect,
+  Popover,
+  PopoverClose,
+  PopoverContent,
+  PopoverTrigger,
   Table,
   TableBody,
   TableCell,
@@ -21,7 +25,7 @@ import {
   TableRow,
   cn,
 } from "@mako-cloud/ui";
-import { Download, ListChecks, Plus, ReceiptText, Search } from "lucide-react";
+import { ChevronDown, Download, Plus, ReceiptText, Search, SlidersHorizontal } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import type { RationalApp } from "../data/rational.js";
@@ -44,7 +48,6 @@ import {
   type HiddenFilter,
   parseTransactionQuery,
   type ReviewFilter,
-  selectGroupedByDate,
   selectQueriedTransactions,
   serializeTransactionQuery,
   TRANSACTION_SORTS,
@@ -54,7 +57,7 @@ import {
 } from "../selectors/filters.js";
 import { merchantResolver } from "../selectors/merchants.js";
 import { amountToText, formatMinorUnits, parseAmount } from "../selectors/money.js";
-import { needsReview, selectReviewCount } from "../selectors/review.js";
+import { selectReviewCount } from "../selectors/review.js";
 import { validateSplits } from "../selectors/splits.js";
 import { selectAvailableMonths, sumAmounts } from "../selectors/transactions.js";
 import { useQuery } from "./hooks.js";
@@ -67,7 +70,7 @@ import {
 } from "./transaction-panel.js";
 
 /**
- * The transactions screen: every filter in the address, a list grouped by day,
+ * The transactions screen: every filter in the address, a continuous transaction list,
  * a bulk bar over a selection, and a detail panel for one transaction.
  *
  * The query codec puts "uncategorized" in the address as an empty category,
@@ -139,9 +142,8 @@ export function TransactionsScreen({
   const query = useMemo(() => readQuery(route.params), [route.params]);
   const context = useMemo(() => ({ categories: taxonomy, merchants: taxonomy }), [taxonomy]);
   const transactions = selectQueriedTransactions(all, query, context);
-  const groups = selectGroupedByDate(transactions);
   const months = selectAvailableMonths(all);
-  const reviewCount = selectReviewCount(all);
+  const reviewCount = selectReviewCount(all, taxonomy);
   const resolve = useMemo(() => merchantResolver(taxonomy), [taxonomy]);
   const categories = useMemo(() => taxonomy.filter(isCategory), [taxonomy]);
   const groupsById = useMemo(
@@ -242,15 +244,8 @@ export function TransactionsScreen({
       : (accounts.find((account) => account.id === query.accountId)?.currency ?? currency);
   const filterCount = activeFilterCount(query);
 
-  // Whole days up to the row budget, so a day's total is never the total of
-  // the part of it that happened to fit.
-  let drawn = 0;
-  const shownGroups = groups.filter((group, index) => {
-    if (index > 0 && drawn >= limit) return false;
-    drawn += group.transactions.length;
-    return true;
-  });
-  const remaining = transactions.length - drawn;
+  const shownTransactions = transactions.slice(0, limit);
+  const remaining = transactions.length - shownTransactions.length;
 
   const toggle = (id: string, checked: boolean) => {
     const next = new Set(selected);
@@ -260,7 +255,6 @@ export function TransactionsScreen({
   };
   const allShownSelected =
     transactions.length > 0 && transactions.every((entry) => selected.has(entry.id));
-  const reviewing = query.review === "needs";
 
   return (
     <section aria-labelledby="transactions-title" className="grid gap-4">
@@ -270,21 +264,10 @@ export function TransactionsScreen({
             Transactions
           </h1>
           <p className="m-0 text-sm text-muted-foreground">
-            Everything that moved money, grouped by day. Filters live in the address, so a view can
-            be shared.
+            Everything that moved money. Search, filter, and sort your transactions.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            aria-pressed={reviewing}
-            data-testid="needs-review-filter"
-            className={cn(reviewing && "border-primary bg-accent text-accent-foreground")}
-            onClick={() => set("review", reviewing ? undefined : "needs")}
-          >
-            <ListChecks aria-hidden="true" />
-            Needs review ({reviewCount})
-          </Button>
           <Button variant="outline" onClick={exportCsv} disabled={transactions.length === 0}>
             <Download aria-hidden="true" />
             Export CSV
@@ -307,6 +290,7 @@ export function TransactionsScreen({
         months={months}
         currency={listCurrency}
         filterCount={filterCount}
+        reviewCount={reviewCount}
       />
 
       {problem === null ? null : (
@@ -407,172 +391,143 @@ export function TransactionsScreen({
               </TableRow>
             </TableBody>
           ) : null}
-          {shownGroups.map((group) => (
-            <TableBody key={group.date} data-testid={`day-${group.date}`}>
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead
-                  scope="rowgroup"
-                  colSpan={6}
-                  className="h-9 pl-4 text-xs font-semibold text-foreground"
+          <TableBody>
+            {shownTransactions.map((transaction) => {
+              const merchant = resolve(transaction);
+              const showMerchant =
+                merchant.id === null
+                  ? merchant.name.toLowerCase() !== transaction.description.trim().toLowerCase()
+                  : merchant.name !== transaction.description;
+              const isSelected = selected.has(transaction.id);
+              const icon = categoryIcon(transaction.category_id);
+              const filedBy = ruleName(transaction.rule_id);
+              return (
+                <TableRow
+                  key={transaction.id}
+                  data-testid={`transaction-${transaction.id}`}
+                  data-description={transaction.description}
+                  data-selected={isSelected ? "true" : "false"}
+                  className={cn(
+                    transaction.hidden === true && "text-muted-foreground",
+                    isSelected && "bg-accent/50 hover:bg-accent/50",
+                  )}
                 >
-                  {group.date}
-                  <small className="font-normal text-muted-foreground">
-                    {" "}
-                    · {group.transactions.length}{" "}
-                    {group.transactions.length === 1 ? "transaction" : "transactions"}
-                  </small>
-                </TableHead>
-                <TableHead
-                  scope="rowgroup"
-                  className="money h-9 text-xs font-semibold text-foreground"
-                  data-testid="day-total"
-                >
-                  {formatMinorUnits(group.total, listCurrency)}
-                </TableHead>
-                <TableHead scope="rowgroup" className="h-9" />
-              </TableRow>
-              {group.transactions.map((transaction) => {
-                const merchant = resolve(transaction);
-                const showMerchant =
-                  merchant.id === null
-                    ? merchant.name.toLowerCase() !== transaction.description.trim().toLowerCase()
-                    : merchant.name !== transaction.description;
-                const isSelected = selected.has(transaction.id);
-                const icon = categoryIcon(transaction.category_id);
-                const filedBy = ruleName(transaction.rule_id);
-                return (
-                  <TableRow
-                    key={transaction.id}
-                    data-testid={`transaction-${transaction.id}`}
-                    data-description={transaction.description}
-                    data-selected={isSelected ? "true" : "false"}
-                    className={cn(
-                      transaction.hidden === true && "text-muted-foreground",
-                      isSelected && "bg-accent/50 hover:bg-accent/50",
-                    )}
-                  >
-                    <TableCell className="w-10 pl-4">
-                      <Checkbox
-                        aria-label={`Select ${transaction.description}`}
-                        checked={isSelected}
-                        onCheckedChange={(checked) => toggle(transaction.id, checked === true)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground tabular-nums">
-                      {transaction.date}
-                    </TableCell>
-                    <TableCell className="max-w-md whitespace-normal">
-                      {showMerchant ? (
-                        <span className="block font-medium" data-testid="merchant">
-                          {merchant.name}
-                        </span>
-                      ) : null}
-                      <span
-                        className={cn(
-                          "block",
-                          showMerchant ? "text-xs text-muted-foreground" : "font-medium",
-                        )}
-                        data-testid="description"
-                      >
-                        {transaction.description}
+                  <TableCell className="w-10 pl-4">
+                    <Checkbox
+                      aria-label={`Select ${transaction.description}`}
+                      checked={isSelected}
+                      onCheckedChange={(checked) => toggle(transaction.id, checked === true)}
+                    />
+                  </TableCell>
+                  <TableCell className="text-muted-foreground tabular-nums">
+                    {transaction.date}
+                  </TableCell>
+                  <TableCell className="max-w-md whitespace-normal">
+                    {showMerchant ? (
+                      <span className="block font-medium" data-testid="merchant">
+                        {merchant.name}
                       </span>
-                      {transaction.notes === undefined ? null : (
-                        <small className="block text-xs text-muted-foreground">
-                          {" "}
-                          {transaction.notes}
-                        </small>
+                    ) : null}
+                    <span
+                      className={cn(
+                        "block",
+                        showMerchant ? "text-xs text-muted-foreground" : "font-medium",
                       )}
-                      {transaction.splits.length === 0 ? null : (
-                        <ul
-                          className="m-0 mt-1 grid list-none gap-0.5 p-0 text-xs text-muted-foreground"
-                          aria-label="Splits"
-                        >
-                          {transaction.splits.map((split) => (
-                            <li key={split.id} className="tabular-nums">
-                              {categoryName(split.category_id) || "uncategorized"}{" "}
-                              {formatMinorUnits(split.amount, transaction.currency)}
-                              {split.note === undefined ? null : <small> {split.note}</small>}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {accountName(transaction.account_id)}
-                    </TableCell>
-                    <TableCell>
-                      {transaction.splits.length > 0 ? (
-                        "split"
-                      ) : (
-                        <>
-                          {icon === null ? null : (
-                            <span className="text-[0.95em]" aria-hidden="true">
-                              {icon}{" "}
-                            </span>
-                          )}
-                          {categoryName(transaction.category_id)}
-                        </>
-                      )}
-                      {transaction.splits.length > 0 || filedBy === null ? null : (
-                        <small className="text-xs text-muted-foreground" data-testid="filed-by">
-                          {" "}
-                          by {filedBy}
-                        </small>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {transaction.tags.map((tagId) => (
-                          <Badge key={tagId} variant="secondary">
-                            {tagName(tagId)}
-                          </Badge>
-                        ))}
-                        {needsReview(transaction) ? (
-                          <MarkerBadge kind="review" data-testid="marker-needs-review">
-                            needs review
-                          </MarkerBadge>
-                        ) : null}
-                        {transaction.hidden === true ? (
-                          <MarkerBadge kind="hidden" data-testid="marker-hidden">
-                            hidden
-                          </MarkerBadge>
-                        ) : null}
-                        {transaction.transfer_id === undefined ? null : (
-                          <MarkerBadge kind="transfer" data-testid="marker-transfer">
-                            transfer
-                          </MarkerBadge>
-                        )}
-                        {transaction.pending === true ? (
-                          <MarkerBadge kind="pending" data-testid="marker-pending">
-                            pending
-                          </MarkerBadge>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    <TableCell
-                      className={cn("money font-medium", transaction.amount > 0 && "text-positive")}
-                      data-testid="amount"
+                      data-testid="description"
                     >
-                      {formatMinorUnits(transaction.amount, transaction.currency)}
-                    </TableCell>
-                    <TableCell className="pr-3 text-right">
-                      <div className="flex justify-end gap-0.5">
-                        <RowAction onClick={() => openDetails(transaction.id)}>Details</RowAction>
-                        <RowAction onClick={() => setEditing(transaction)}>Edit</RowAction>
-                        <RowAction onClick={() => openReceipts(transaction.id)}>Receipts</RowAction>
-                        <RowAction
-                          className="hover:text-destructive"
-                          onClick={() => void deleteWithReceipts([transaction.id])}
-                        >
-                          Delete
-                        </RowAction>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          ))}
+                      {transaction.description}
+                    </span>
+                    {transaction.notes === undefined ? null : (
+                      <small className="block text-xs text-muted-foreground">
+                        {" "}
+                        {transaction.notes}
+                      </small>
+                    )}
+                    {transaction.splits.length === 0 ? null : (
+                      <ul
+                        className="m-0 mt-1 grid list-none gap-0.5 p-0 text-xs text-muted-foreground"
+                        aria-label="Splits"
+                      >
+                        {transaction.splits.map((split) => (
+                          <li key={split.id} className="tabular-nums">
+                            {categoryName(split.category_id) || "uncategorized"}{" "}
+                            {formatMinorUnits(split.amount, transaction.currency)}
+                            {split.note === undefined ? null : <small> {split.note}</small>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {accountName(transaction.account_id)}
+                  </TableCell>
+                  <TableCell>
+                    {transaction.splits.length > 0 ? (
+                      "split"
+                    ) : (
+                      <>
+                        {icon === null ? null : (
+                          <span className="text-[0.95em]" aria-hidden="true">
+                            {icon}{" "}
+                          </span>
+                        )}
+                        {categoryName(transaction.category_id)}
+                      </>
+                    )}
+                    {transaction.splits.length > 0 || filedBy === null ? null : (
+                      <small className="text-xs text-muted-foreground" data-testid="filed-by">
+                        {" "}
+                        by {filedBy}
+                      </small>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {transaction.tags.map((tagId) => (
+                        <Badge key={tagId} variant="secondary">
+                          {tagName(tagId)}
+                        </Badge>
+                      ))}
+                      {transaction.hidden === true ? (
+                        <MarkerBadge kind="hidden" data-testid="marker-hidden">
+                          hidden
+                        </MarkerBadge>
+                      ) : null}
+                      {transaction.transfer_id === undefined ? null : (
+                        <MarkerBadge kind="transfer" data-testid="marker-transfer">
+                          transfer
+                        </MarkerBadge>
+                      )}
+                      {transaction.pending === true ? (
+                        <MarkerBadge kind="pending" data-testid="marker-pending">
+                          pending
+                        </MarkerBadge>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell
+                    className={cn("money font-medium", transaction.amount > 0 && "text-positive")}
+                    data-testid="amount"
+                  >
+                    {formatMinorUnits(transaction.amount, transaction.currency)}
+                  </TableCell>
+                  <TableCell className="pr-3 text-right">
+                    <div className="flex justify-end gap-0.5">
+                      <RowAction onClick={() => openDetails(transaction.id)}>Details</RowAction>
+                      <RowAction onClick={() => setEditing(transaction)}>Edit</RowAction>
+                      <RowAction onClick={() => openReceipts(transaction.id)}>Receipts</RowAction>
+                      <RowAction
+                        className="hover:text-destructive"
+                        onClick={() => void deleteWithReceipts([transaction.id])}
+                      >
+                        Delete
+                      </RowAction>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
         </Table>
       </Card>
       {remaining > 0 ? (
@@ -660,6 +615,7 @@ function FilterBar({
   months,
   currency,
   filterCount,
+  reviewCount,
 }: {
   query: TransactionQuery;
   set: <Key extends keyof TransactionQuery>(
@@ -674,6 +630,7 @@ function FilterBar({
   months: readonly string[];
   currency: string;
   filterCount: number;
+  reviewCount: number;
 }) {
   const [search, setSearch] = useDebouncedText(query.text ?? "", (text) =>
     set("text", text.trim() === "" ? undefined : text.trim()),
@@ -691,8 +648,20 @@ function FilterBar({
 
   return (
     <Card className="py-4" data-testid="filter-bar">
-      <CardContent className="grid grid-cols-[repeat(auto-fill,minmax(9.5rem,1fr))] items-end gap-x-3 gap-y-3 px-4">
-        <BarField id="filter-search" label="Search" className="col-span-full">
+      <CardContent className="flex flex-wrap items-end gap-3 px-4">
+        <BarField id="transaction-view" label="View" className="w-52">
+          <NativeSelect
+            id="transaction-view"
+            aria-label="Transaction view"
+            value={query.review ?? ""}
+            onChange={(event) => set("review", event.target.value === "" ? undefined : event.target.value as ReviewFilter)}
+          >
+            <option value="">All transactions</option>
+            <option value="needs">Needs review ({reviewCount})</option>
+            <option value="reviewed">Reviewed</option>
+          </NativeSelect>
+        </BarField>
+        <BarField id="filter-search" label="Search" className="min-w-0 basis-full sm:flex-1 sm:basis-64">
           <div className="relative">
             <Search
               aria-hidden="true"
@@ -709,199 +678,7 @@ function FilterBar({
             />
           </div>
         </BarField>
-        <BarField id="filter-account" label="Account">
-          <NativeSelect
-            id="filter-account"
-            aria-label="Filter by account"
-            value={query.accountId ?? ""}
-            onChange={(event) =>
-              set("accountId", event.target.value === "" ? undefined : event.target.value)
-            }
-          >
-            <option value="">All accounts</option>
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name}
-              </option>
-            ))}
-          </NativeSelect>
-        </BarField>
-        <BarField id="filter-category" label="Category">
-          <NativeSelect
-            id="filter-category"
-            aria-label="Filter by category"
-            value={
-              query.categoryId === undefined
-                ? ""
-                : query.categoryId === ""
-                  ? UNCATEGORIZED
-                  : query.categoryId
-            }
-            onChange={(event) =>
-              set(
-                "categoryId",
-                event.target.value === ""
-                  ? undefined
-                  : event.target.value === UNCATEGORIZED
-                    ? ""
-                    : event.target.value,
-              )
-            }
-          >
-            <CategoryOptions
-              taxonomy={taxonomy}
-              blankLabel="All categories"
-              extra={[{ value: UNCATEGORIZED, label: "Uncategorized" }]}
-            />
-          </NativeSelect>
-        </BarField>
-        <BarField id="filter-tag" label="Tag">
-          <NativeSelect
-            id="filter-tag"
-            aria-label="Filter by tag"
-            value={query.tagId ?? ""}
-            onChange={(event) =>
-              set("tagId", event.target.value === "" ? undefined : event.target.value)
-            }
-          >
-            <option value="">All tags</option>
-            {tags.map((tag) => (
-              <option key={tag.id} value={tag.id}>
-                {tag.name}
-              </option>
-            ))}
-          </NativeSelect>
-        </BarField>
-        <BarField id="filter-merchant" label="Merchant">
-          <NativeSelect
-            id="filter-merchant"
-            aria-label="Filter by merchant"
-            value={query.merchantId ?? ""}
-            onChange={(event) =>
-              set("merchantId", event.target.value === "" ? undefined : event.target.value)
-            }
-          >
-            <option value="">All merchants</option>
-            {merchants.map((merchant) => (
-              <option key={merchant.id} value={merchant.id}>
-                {merchant.name}
-              </option>
-            ))}
-          </NativeSelect>
-        </BarField>
-        <BarField id="filter-month" label="Month">
-          <NativeSelect
-            id="filter-month"
-            aria-label="Filter by month"
-            value={query.month ?? ""}
-            onChange={(event) =>
-              set("month", event.target.value === "" ? undefined : event.target.value)
-            }
-          >
-            <option value="">All months</option>
-            {monthOptions.map((month) => (
-              <option key={month} value={month}>
-                {month}
-              </option>
-            ))}
-          </NativeSelect>
-        </BarField>
-        <BarField id="filter-from" label="From">
-          <Input
-            id="filter-from"
-            type="date"
-            aria-label="From"
-            value={query.from ?? ""}
-            onChange={(event) =>
-              set("from", event.target.value === "" ? undefined : event.target.value)
-            }
-          />
-        </BarField>
-        <BarField id="filter-to" label="To">
-          <Input
-            id="filter-to"
-            type="date"
-            aria-label="To"
-            value={query.to ?? ""}
-            onChange={(event) =>
-              set("to", event.target.value === "" ? undefined : event.target.value)
-            }
-          />
-        </BarField>
-        <BarField id="filter-min" label="Min amount">
-          <Input
-            id="filter-min"
-            inputMode="decimal"
-            aria-label="Min amount"
-            placeholder="0.00"
-            className="tabular-nums"
-            value={min}
-            onChange={(event) => setMin(event.target.value)}
-          />
-        </BarField>
-        <BarField id="filter-max" label="Max amount">
-          <Input
-            id="filter-max"
-            inputMode="decimal"
-            aria-label="Max amount"
-            placeholder="any"
-            className="tabular-nums"
-            value={max}
-            onChange={(event) => setMax(event.target.value)}
-          />
-        </BarField>
-        <BarField id="filter-review" label="Review">
-          <NativeSelect
-            id="filter-review"
-            aria-label="Review"
-            value={query.review ?? ""}
-            onChange={(event) =>
-              set(
-                "review",
-                event.target.value === "" ? undefined : (event.target.value as ReviewFilter),
-              )
-            }
-          >
-            <option value="">All</option>
-            <option value="needs">Needs review</option>
-            <option value="reviewed">Reviewed</option>
-          </NativeSelect>
-        </BarField>
-        <BarField id="filter-hidden" label="Hidden">
-          <NativeSelect
-            id="filter-hidden"
-            aria-label="Hidden"
-            value={query.hidden ?? ""}
-            onChange={(event) =>
-              set(
-                "hidden",
-                event.target.value === "" ? undefined : (event.target.value as HiddenFilter),
-              )
-            }
-          >
-            <option value="">Exclude hidden</option>
-            <option value="include">Include hidden</option>
-            <option value="only">Only hidden</option>
-          </NativeSelect>
-        </BarField>
-        <BarField id="filter-transfers" label="Transfers">
-          <NativeSelect
-            id="filter-transfers"
-            aria-label="Transfers"
-            value={query.transfers ?? ""}
-            onChange={(event) =>
-              set(
-                "transfers",
-                event.target.value === "" ? undefined : (event.target.value as TransferFilter),
-              )
-            }
-          >
-            <option value="">Include transfers</option>
-            <option value="exclude">Exclude transfers</option>
-            <option value="only">Only transfers</option>
-          </NativeSelect>
-        </BarField>
-        <BarField id="filter-sort" label="Sort">
+        <BarField id="filter-sort" label="Sort" className="w-40">
           <NativeSelect
             id="filter-sort"
             aria-label="Sort"
@@ -922,25 +699,230 @@ function FilterBar({
             ))}
           </NativeSelect>
         </BarField>
-        <div className="flex h-9 items-center gap-2 text-sm" data-testid="filter-state">
-          {filterCount === 0 ? (
-            <span className="text-muted-foreground">No filters</span>
-          ) : (
-            <>
-              <Badge variant="secondary" data-testid="active-filter-count">
-                {filterCount} {filterCount === 1 ? "filter" : "filters"}
-              </Badge>
-              <Button
-                variant="link"
-                size="sm"
-                className="h-auto p-0"
-                onClick={() => navigate(query.sort === undefined ? {} : { sort: query.sort })}
-              >
-                Clear filters
-              </Button>
-            </>
-          )}
-        </div>
+        {filterCount > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate(query.sort === undefined ? {} : { sort: query.sort })}
+          >
+            Clear filters
+          </Button>
+        )}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="group" data-testid="filters-toggle">
+              <SlidersHorizontal aria-hidden="true" />
+              Filters
+              {filterCount > 0 && (
+                <Badge variant="secondary" data-testid="active-filter-count">
+                  {filterCount} {filterCount === 1 ? "filter" : "filters"}
+                </Badge>
+              )}
+              <ChevronDown aria-hidden="true" className="transition-transform group-data-[state=open]:rotate-180" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="end"
+            collisionPadding={16}
+            aria-label="Transaction filters"
+            className="flex max-h-[min(80dvh,var(--radix-popover-content-available-height))] w-[min(42rem,calc(100vw-2rem))] flex-col overflow-hidden p-0"
+          >
+            <div className="border-b px-4 py-3">
+              <h2 className="font-semibold">Filters</h2>
+            </div>
+            <div className="grid min-h-0 grid-cols-1 gap-4 overflow-y-auto p-4 sm:grid-cols-3">
+              <BarField id="filter-account" label="Account">
+                <NativeSelect
+                  id="filter-account"
+                  aria-label="Filter by account"
+                  value={query.accountId ?? ""}
+                  onChange={(event) =>
+                    set("accountId", event.target.value === "" ? undefined : event.target.value)
+                  }
+                >
+                  <option value="">All accounts</option>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </BarField>
+              <BarField id="filter-group" label="Group">
+                <NativeSelect id="filter-group" aria-label="Filter by group" value={query.groupId ?? ""}
+                  onChange={event => set("groupId", event.target.value || undefined)}>
+                  <option value="">All groups</option>
+                  {taxonomy.filter(isGroup).map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
+                </NativeSelect>
+              </BarField>
+              <BarField id="filter-category" label="Category">
+                <NativeSelect
+                  id="filter-category"
+                  aria-label="Filter by category"
+                  value={
+                    query.categoryId === undefined
+                      ? ""
+                      : query.categoryId === ""
+                        ? UNCATEGORIZED
+                        : query.categoryId
+                  }
+                  onChange={(event) =>
+                    set(
+                      "categoryId",
+                      event.target.value === ""
+                        ? undefined
+                        : event.target.value === UNCATEGORIZED
+                          ? ""
+                          : event.target.value,
+                    )
+                  }
+                >
+                  <CategoryOptions
+                    taxonomy={taxonomy}
+                    blankLabel="All categories"
+                    includeArchived
+                    extra={[{ value: UNCATEGORIZED, label: "Uncategorized" }]}
+                  />
+                </NativeSelect>
+              </BarField>
+              <BarField id="filter-tag" label="Tag">
+                <NativeSelect
+                  id="filter-tag"
+                  aria-label="Filter by tag"
+                  value={query.tagId ?? ""}
+                  onChange={(event) =>
+                    set("tagId", event.target.value === "" ? undefined : event.target.value)
+                  }
+                >
+                  <option value="">All tags</option>
+                  {tags.map((tag) => (
+                    <option key={tag.id} value={tag.id}>
+                      {tag.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </BarField>
+              <BarField id="filter-merchant" label="Merchant">
+                <NativeSelect
+                  id="filter-merchant"
+                  aria-label="Filter by merchant"
+                  value={query.merchantId ?? ""}
+                  onChange={(event) =>
+                    set("merchantId", event.target.value === "" ? undefined : event.target.value)
+                  }
+                >
+                  <option value="">All merchants</option>
+                  {merchants.map((merchant) => (
+                    <option key={merchant.id} value={merchant.id}>
+                      {merchant.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </BarField>
+              <BarField id="filter-month" label="Month">
+                <NativeSelect
+                  id="filter-month"
+                  aria-label="Filter by month"
+                  value={query.month ?? ""}
+                  onChange={(event) =>
+                    set("month", event.target.value === "" ? undefined : event.target.value)
+                  }
+                >
+                  <option value="">All months</option>
+                  {monthOptions.map((month) => (
+                    <option key={month} value={month}>
+                      {month}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </BarField>
+              <BarField id="filter-from" label="From">
+                <Input
+                  id="filter-from"
+                  type="date"
+                  aria-label="From"
+                  value={query.from ?? ""}
+                  onChange={(event) =>
+                    set("from", event.target.value === "" ? undefined : event.target.value)
+                  }
+                />
+              </BarField>
+              <BarField id="filter-to" label="To">
+                <Input
+                  id="filter-to"
+                  type="date"
+                  aria-label="To"
+                  value={query.to ?? ""}
+                  onChange={(event) =>
+                    set("to", event.target.value === "" ? undefined : event.target.value)
+                  }
+                />
+              </BarField>
+              <BarField id="filter-min" label="Min amount">
+                <Input
+                  id="filter-min"
+                  inputMode="decimal"
+                  aria-label="Min amount"
+                  placeholder="0.00"
+                  className="tabular-nums"
+                  value={min}
+                  onChange={(event) => setMin(event.target.value)}
+                />
+              </BarField>
+              <BarField id="filter-max" label="Max amount">
+                <Input
+                  id="filter-max"
+                  inputMode="decimal"
+                  aria-label="Max amount"
+                  placeholder="any"
+                  className="tabular-nums"
+                  value={max}
+                  onChange={(event) => setMax(event.target.value)}
+                />
+              </BarField>
+              <BarField id="filter-hidden" label="Hidden">
+                <NativeSelect
+                  id="filter-hidden"
+                  aria-label="Hidden"
+                  value={query.hidden ?? ""}
+                  onChange={(event) =>
+                    set(
+                      "hidden",
+                      event.target.value === "" ? undefined : (event.target.value as HiddenFilter),
+                    )
+                  }
+                >
+                  <option value="">Exclude hidden</option>
+                  <option value="include">Include hidden</option>
+                  <option value="only">Only hidden</option>
+                </NativeSelect>
+              </BarField>
+              <BarField id="filter-transfers" label="Transfers">
+                <NativeSelect
+                  id="filter-transfers"
+                  aria-label="Transfers"
+                  value={query.transfers ?? ""}
+                  onChange={(event) =>
+                    set(
+                      "transfers",
+                      event.target.value === "" ? undefined : (event.target.value as TransferFilter),
+                    )
+                  }
+                >
+                  <option value="">Include transfers</option>
+                  <option value="exclude">Exclude transfers</option>
+                  <option value="only">Only transfers</option>
+                </NativeSelect>
+              </BarField>
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t px-4 py-3">
+              <p className="text-xs text-muted-foreground">Filters update results as you choose.</p>
+              <PopoverClose asChild>
+                <Button size="sm">Done</Button>
+              </PopoverClose>
+            </div>
+          </PopoverContent>
+        </Popover>
       </CardContent>
     </Card>
   );
@@ -1134,7 +1116,7 @@ function BulkBar({
           >
             <option value="">Leave as is</option>
             <option value="reviewed">Mark reviewed</option>
-            <option value="unreviewed">Mark unreviewed</option>
+            <option value="unreviewed">Mark as needs review</option>
           </NativeSelect>
         </BarField>
         <BarField id="bulk-hidden" label="Hidden" className="min-w-36">
@@ -1353,6 +1335,7 @@ function TransactionForm({
                 <CategoryOptions
                   taxonomy={taxonomy}
                   blankLabel={splits.length > 0 ? "split" : "Uncategorized"}
+                  selectedId={categoryId}
                 />
               </NativeSelect>
             </Field>
@@ -1432,7 +1415,7 @@ function TransactionForm({
                     setSplits(replaceRow(splits, index, { categoryId: event.target.value }))
                   }
                 >
-                  <CategoryOptions taxonomy={taxonomy} blankLabel="Uncategorized" />
+                  <CategoryOptions taxonomy={taxonomy} blankLabel="Uncategorized" selectedId={row.categoryId} />
                 </NativeSelect>
                 <Input
                   aria-label={`Split ${index + 1} amount`}
