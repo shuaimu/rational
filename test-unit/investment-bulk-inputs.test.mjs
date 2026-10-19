@@ -57,6 +57,10 @@ const content=readFileSync(get('--input')),rows=content.toString().trim().split(
 const record=event=>appendFileSync(join(root,'events'),JSON.stringify({event,jobId})+'\\n');
 if(!a.includes('--job')){writeFileSync(join(root,jobId),'created',{flag:'wx'});console.error('job '+jobId);record('created');}else if(get('--job')!==jobId)throw Error('wrong resumed job');
 record('start');
+// Hold the first admitted batch until all four siblings exist. Wall-clock
+// delays alone race filesystem/process scheduling on a busy development host.
+const deadline=Date.now()+10000;
+while(readFileSync(join(root,'events'),'utf8').trim().split('\\n').map(JSON.parse).filter(e=>e.event==='created').length<4){if(Date.now()>deadline)throw Error('fixture admission barrier timed out');await new Promise(r=>setTimeout(r,10));}
 if(jobId==='djob_r00000'&&!a.includes('--job')){await new Promise(r=>setTimeout(r,150));record('end');process.exit(1);}
 await new Promise(r=>setTimeout(r,700));record('end');
 console.log(JSON.stringify({jobId,state:'succeeded',collectionId:'robinlab_inputs',conflictStrategy:'create_only',tenant:{projectId:'project',environmentId:'destination'},manifest:{digest:'sha256:'+createHash('sha256').update(content).digest('hex'),rowCount:rows.length,byteCount:content.length},progress:{processed:rows.length,committed:rows.length,failed:0,skipped:0}}));`);

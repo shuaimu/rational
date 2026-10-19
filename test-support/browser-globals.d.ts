@@ -57,6 +57,7 @@ interface RationalDiagnosticsWire {
 }
 
 interface RationalWritesWire {
+  organizeImportedCategories(): Promise<number>;
   createTransaction(input: Record<string, unknown>): Promise<RationalDocumentWire>;
   updateTransaction(
     id: string,
@@ -135,6 +136,7 @@ interface RationalReceiptsWire {
 }
 
 interface RationalCollectionWire {
+  bulkInsert(documents: readonly Record<string, unknown>[]): Promise<unknown>;
   find(query?: Record<string, unknown>): {
     exec(): Promise<Array<{ toJSON(): RationalDocumentWire }>>;
   };

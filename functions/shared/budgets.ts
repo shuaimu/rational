@@ -67,6 +67,15 @@ export interface BudgetCategoryLike {
   readonly sort_order?: number;
 }
 
+/** Trading principal is neither household income nor spending; keep its custom category intact. */
+export function isCashFlowCategory(category: {
+  readonly name: string;
+  readonly category_kind?: string;
+}): boolean {
+  const name = category.name.trim().toLowerCase();
+  return category.category_kind !== "transfer" && name !== "buy" && name !== "sell";
+}
+
 /** What the month model reads of a category group. */
 export interface BudgetGroupLike {
   readonly id: string;
@@ -405,6 +414,7 @@ function byOrder(
  */
 export function monthBudgetModel(input: MonthBudgetInput): MonthBudgetModel {
   const { month, currency, transactions, plannedGoalMonthly } = input;
+  const categories = input.categories.filter(isCashFlowCategory);
   const groupIds = new Set(input.groups.map((group) => group.id));
   const monthly = input.budgets.filter(
     (budget) => budget.month === month && budget.currency === currency,
@@ -421,7 +431,7 @@ export function monthBudgetModel(input: MonthBudgetInput): MonthBudgetModel {
 
   const incomeBudget = statusOf("income", INCOME_SUBJECT);
   const incomeCategoryIds = new Set(
-    input.categories
+    categories
       .filter((category) => category.category_kind === "income")
       .map((category) => category.id),
   );
@@ -431,7 +441,7 @@ export function monthBudgetModel(input: MonthBudgetInput): MonthBudgetModel {
     actual: incomeInMonth(transactions, incomeCategoryIds, month, currency),
   };
 
-  const expenseCategories = input.categories.filter(
+  const expenseCategories = categories.filter(
     (category) =>
       category.archived !== true &&
       (category.category_kind === undefined || category.category_kind === "expense"),

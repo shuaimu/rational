@@ -3,7 +3,7 @@ import { isCloudApi } from './runtime';
 export { isCloudApi } from './runtime';
 import { configureJobs, waitForJob, type CloudJob } from './jobs';
 import axios, { type AxiosRequestConfig, type InternalAxiosRequestConfig } from 'axios';
-import { auth, onClearProtectedState, requireOwnerScope, signOut } from './auth';
+import { auth, onClearProtectedState, requireOwnerScope, renewSession, validateSession } from './auth';
 import { digest } from './manifest';
 import { getSyncStatus, subscribeSync, waitForVersion } from './rxdb';
 
@@ -96,10 +96,14 @@ api.interceptors.response.use(async (response) => {
   }
   if (error.response?.status === 401 && request && !request.robinRenewed) {
     request.robinRenewed = true;
-    await auth.refreshSession();
+    if (requireOwnerScope() !== request.robinScope) throw new Error('Application session changed.');
+    await renewSession();
+    if (requireOwnerScope() !== request.robinScope) throw new Error('Application session changed. Retry this operation.');
     return api.request(request);
   }
-  if (error.response?.status === 401) { console.warn('Investment session reset', { source: 'api-after-renewal' }); await signOut(); }
+  // A function may reject a request independently of the shared login. Only
+  // the auth authority's refresh verdict can end that login automatically.
+  if (error.response?.status === 401) await validateSession();
   if (request?.robinCommand && error.response && [400, 404, 410, 413, 422].includes(error.response.status)) complete(request.robinCommand);
   // Axios errors carry headers and request bodies. Expose only a user message.
   const message = typeof error.response?.data?.error === 'string' ? error.response.data.error : !error.response ? 'The API is unavailable. Retry this operation when connected.' : `The request failed (${error.response.status}).`;

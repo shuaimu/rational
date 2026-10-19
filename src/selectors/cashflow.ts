@@ -1,4 +1,5 @@
 import { isCounted } from "../../functions/shared/exclusions.js";
+import { isCashFlowCategory } from "../../functions/shared/budgets.js";
 import { addMonths } from "../../functions/shared/goals.js";
 import {
   type Account,
@@ -22,7 +23,8 @@ import { isIsoDate, monthKey } from "./transactions.js";
  * uses: an amount under an income category is income whatever its sign, an
  * amount under an expense category is spending whatever its sign (a refund
  * reduces spending rather than posing as income), and an amount under no
- * category, or a category of another kind, counts by its sign. That is what
+ * category or a custom category counts by its sign. Transfer categories and
+ * Buy/Sell trading principal are excluded without changing their stored types. That is what
  * lets the dashboard, the cash-flow page, and the budget page show one
  * number for "spent this month".
  *
@@ -41,6 +43,8 @@ export interface DateRange {
  * `custom:2026-08-01:2026-09-06`.
  */
 export type RangeKey = string;
+
+export type CalendarPeriod = "month" | "quarter" | "year";
 
 type ParsedRange =
   | { readonly kind: "month"; readonly month: string }
@@ -130,6 +134,25 @@ export function yearKey(date: string): RangeKey {
 
 export function customRangeKey(range: DateRange): RangeKey {
   return `custom:${range.start}:${range.end}`;
+}
+
+export function calendarPeriodFor(key: RangeKey): CalendarPeriod | null {
+  const parsed = parseRangeKey(key);
+  return parsed?.kind === "month" || parsed?.kind === "quarter" || parsed?.kind === "year"
+    ? parsed.kind
+    : null;
+}
+
+/** The calendar period containing a date, for switching the cash-flow view. */
+export function calendarRangeKey(date: string, period: CalendarPeriod): RangeKey {
+  switch (period) {
+    case "month":
+      return monthKey(date);
+    case "quarter":
+      return quarterKey(date);
+    case "year":
+      return yearKey(date);
+  }
 }
 
 /**
@@ -234,11 +257,16 @@ function* effects(transaction: Transaction): Generator<Effect> {
   }
 }
 
-type CategoryKinds = ReadonlyMap<string, CategoryKind | undefined>;
+type CashFlowKind = CategoryKind | "excluded" | undefined;
+type CategoryKinds = ReadonlyMap<string, CashFlowKind>;
 
 function categoryKinds(entries: readonly TaxonomyEntry[]): CategoryKinds {
-  const kinds = new Map<string, CategoryKind | undefined>();
-  for (const entry of entries) if (isCategory(entry)) kinds.set(entry.id, entry.category_kind);
+  const kinds = new Map<string, CashFlowKind>();
+  for (const entry of entries) {
+    if (isCategory(entry)) {
+      kinds.set(entry.id, isCashFlowCategory(entry) ? entry.category_kind : "excluded");
+    }
+  }
   return kinds;
 }
 
@@ -264,10 +292,38 @@ function* countedEffects(
     if (!isCounted(transaction) || !inRange(transaction.date, range)) continue;
     if (currency !== undefined && transaction.currency !== currency) continue;
     for (const effect of effects(transaction)) {
+      if (kinds.get(effect.categoryId) === "excluded") continue;
       const { side, amount } = classify(effect, kinds);
       yield { transaction, effect, side, amount };
     }
   }
+}
+
+/**
+ * Export exactly the cash-flow portions. Splits become individual rows so a
+ * transfer portion is omitted without discarding or inflating the expense.
+ * The stored transaction and its balance impact stay unchanged.
+ */
+export function cashFlowExportTransactions(
+  transactions: readonly Transaction[],
+  categories: readonly TaxonomyEntry[],
+  range: DateRange | null,
+): readonly Transaction[] {
+  const rows: Transaction[] = [];
+  for (const { transaction, effect } of countedEffects(transactions, range, categoryKinds(categories))) {
+    if (transaction.splits.length === 0) {
+      rows.push(transaction);
+    } else {
+      const { category_id: _categoryId, ...base } = transaction;
+      rows.push({
+        ...base,
+        amount: effect.amount,
+        splits: [],
+        ...(effect.categoryId === "" ? {} : { category_id: effect.categoryId }),
+      });
+    }
+  }
+  return rows;
 }
 
 export interface CashFlowSummary {
@@ -371,6 +427,54 @@ export function monthlySeries(
 }
 
 export const selectMonthlySeries = memoizeLast(monthlySeries);
+
+export interface PeriodFlow {
+  readonly period: RangeKey;
+  readonly currency: string;
+  readonly income: number;
+  readonly spending: number;
+  readonly net: number;
+}
+
+/**
+ * Compare complete calendar periods across history, independently of the
+ * period selected for the detail cards. Quiet periods stay on the timeline.
+ */
+export function comparisonSeries(
+  transactions: readonly Transaction[],
+  categories: readonly TaxonomyEntry[],
+  period: CalendarPeriod,
+  currency: string,
+  today: string,
+  selected: RangeKey,
+): readonly PeriodFlow[] {
+  const current = calendarRangeKey(today, period);
+  const selectedRange = rangeFor(selected, today);
+  const selectedPeriod = calendarRangeKey(selectedRange?.start ?? today, period);
+  let first = selectedPeriod < current ? selectedPeriod : current;
+  let last = selectedPeriod > current ? selectedPeriod : current;
+  const totals = new Map<string, { income: number; spending: number }>();
+  for (const { transaction, side, amount } of countedEffects(
+    transactions, null, categoryKinds(categories), currency,
+  )) {
+    const key = calendarRangeKey(transaction.date, period);
+    const total = totals.get(key) ?? { income: 0, spending: 0 };
+    total[side] += amount;
+    totals.set(key, total);
+    if (key < first) first = key;
+    if (key > last) last = key;
+  }
+  if (first === last) first = shiftRange(first, -1);
+  const rows: PeriodFlow[] = [];
+  for (let key = first; key <= last; key = shiftRange(key, 1)) {
+    const total = totals.get(key) ?? { income: 0, spending: 0 };
+    rows.push({ period: key, currency, ...total, net: total.income - total.spending });
+    if (key === last) break;
+  }
+  return rows;
+}
+
+export const selectComparisonSeries = memoizeLast(comparisonSeries);
 
 export type SpendingKey = "category" | "group" | "merchant" | "tag" | "account";
 

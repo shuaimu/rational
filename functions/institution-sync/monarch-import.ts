@@ -1,5 +1,8 @@
 import type { JsonObject, FunctionDocument } from "@mako-cloud/edge-sdk";
 import type { PlaidStore } from "./plaid-mapped.ts";
+import { suggestedGroupDocument, type FinancialType } from "../shared/taxonomy.ts";
+import { ImportPerformance } from "./import-performance.ts";
+import { IMPORT_BATCH_ROWS, mapImportBatch } from "./import-batch.ts";
 import {
   checkedSum,
   decimalMinor,
@@ -45,6 +48,7 @@ export interface ImportJob {
   totals: Record<string, Totals>;
   accountIds: Record<string, string>;
   message: string;
+  performance?: ReturnType<ImportPerformance["snapshot"]>;
 }
 interface Provenance {
   source: SourceRow;
@@ -69,6 +73,8 @@ export interface ImportSummary {
 export class MonarchImport {
   private store: PlaidStore;
   private now: () => number;
+  private performance: ImportPerformance | null = null;
+  private taxonomyCache = new Map<string, Promise<string>>();
   constructor(store: PlaidStore, now: () => number = Date.now) {
     this.store = store;
     this.now = now;
@@ -274,6 +280,7 @@ export class MonarchImport {
     return this.summary(job);
   }
   private async save(job: ImportJob, old: FunctionDocument) {
+    if (this.performance) job.performance = this.performance.snapshot();
     await this.put(job.id, job.householdId, "job", job, old, { state: job.state });
   }
   private async chunk(job: ImportJob, index: number): Promise<SourceRow[]> {
@@ -291,6 +298,10 @@ export class MonarchImport {
     maxRows = 100,
     deadline = this.now() + 25000,
   ): Promise<ImportSummary> {
+    const store = this.store;
+    this.taxonomyCache.clear();
+    this.performance = new ImportPerformance(store, this.now);
+    this.store = this.performance.store;
     try {
       return await this.step(id, householdId, maxRows, deadline);
     } catch (error) {
@@ -301,6 +312,9 @@ export class MonarchImport {
           : "Import paused after a cloud error; retry this phase.";
       await this.save(saved.data, saved.doc);
       throw error;
+    } finally {
+      this.store = store;
+      this.performance = null;
     }
   }
   private async step(
@@ -311,72 +325,34 @@ export class MonarchImport {
   ): Promise<ImportSummary> {
     let saved = await this.job(id, householdId),
       job = saved.data;
+    if (this.performance) this.performance.phase = job.state;
     if (["complete", "cancelled", "uploading", "needs-review"].includes(job.state))
       return this.summary(job);
     if (job.state === "validating") {
       const rows = await this.chunk(job, job.chunk);
       let worked = 0;
-      for (const [index, row] of rows.entries()) {
-        if (index < job.row) continue;
-        if (worked >= maxRows || this.now() >= deadline) break;
-        worked++;
-        job.row = index + 1;
-        job.processed++;
-        validateSource(row);
-        const plan = job.manifest.accounts.find((plan) => plan.source === row.account);
-        if (!plan || (row.category && !Object.hasOwn(job.manifest.categories, row.category)))
-          throw new Error(`Line ${row.line}: missing account or category mapping.`);
-        const amount = decimalMinor(row.amount, plan.currency);
-        tagsFor(row.tags, job.manifest.tagEncoding);
-        if (row.sourceId) {
-          const key = `seen_${await digest([job.id, row.account, row.sourceId])}`;
-          const hash = await digest({ ...row, line: 0 });
-          const prior = await this.get<{ hash: string; position: string }>(key, householdId);
-          const position = `${job.chunk}:${index}`;
-          if (prior && prior.data.hash !== hash)
-            throw new Error(`Line ${row.line}: the same source ID has conflicting rows.`);
-          if (prior && prior.data.position !== position) continue;
-          if (!prior)
-            await this.put(key, householdId, "validation", { hash, position }, null, {
-              job_id: job.id,
-            });
+      while (job.row < rows.length && worked < maxRows && this.now() < deadline) {
+        const start = job.row;
+        const batch = rows.slice(start, start + Math.min(IMPORT_BATCH_ROWS, maxRows - worked));
+        const validated = await mapImportBatch(batch, row => this.rowKey(job, row),
+          (row, offset) => this.validateRow(job, row, start + offset));
+        for (const result of validated) {
+          if (!result) continue;
+          const { row, plan, amount } = result;
+          const totals = (Object.hasOwn(job.totals, row.account)
+            ? job.totals[row.account]
+            : undefined) ?? { count: 0, before: 0, after: 0, first: row.date, last: row.date };
+          totals.count++;
+          totals.first = row.date < totals.first ? row.date : totals.first;
+          totals.last = row.date > totals.last ? row.date : totals.last;
+          const field = !plan.balance || row.date <= plan.balance.date ? "before" : "after";
+          totals[field] = checkedSum([totals[field], amount]);
+          job.totals[row.account] = totals;
         }
-        if (!row.sourceId) {
-          const counterId = `occ_${await digest([job.id, legacyKey(row, amount)])}`;
-          const ordinalId = `ord_${job.id}_${job.chunk}_${index}`;
-          let ordinal = await this.get<{ value: number }>(ordinalId, householdId);
-          let counter = await this.get<{ value: number }>(counterId, householdId);
-          if (!ordinal) {
-            await this.put(
-              ordinalId,
-              householdId,
-              "ordinal",
-              { value: (counter?.data.value ?? 0) + 1 },
-              null,
-              { job_id: job.id },
-            );
-            ordinal = await this.get(ordinalId, householdId);
-          }
-          if (!ordinal) throw new Error("Cannot persist a legacy occurrence identity.");
-          if ((counter?.data.value ?? 0) < ordinal.data.value)
-            await this.put(
-              counterId,
-              householdId,
-              "occurrence",
-              ordinal.data,
-              counter?.doc ?? null,
-              { job_id: job.id },
-            );
-        }
-        const totals = (Object.hasOwn(job.totals, row.account)
-          ? job.totals[row.account]
-          : undefined) ?? { count: 0, before: 0, after: 0, first: row.date, last: row.date };
-        totals.count++;
-        totals.first = row.date < totals.first ? row.date : totals.first;
-        totals.last = row.date > totals.last ? row.date : totals.last;
-        const field = !plan.balance || row.date <= plan.balance.date ? "before" : "after";
-        totals[field] = checkedSum([totals[field], amount]);
-        job.totals[row.account] = totals;
+        job.row += batch.length;
+        job.processed += batch.length;
+        worked += batch.length;
+        if (this.performance) this.performance.rows += batch.length;
       }
       if (job.row === rows.length) {
         job.chunk++;
@@ -396,32 +372,30 @@ export class MonarchImport {
     if (job.state === "importing") {
       const rows = await this.chunk(job, job.chunk);
       let worked = 0;
-      const ensured = new Set<string>();
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i]!,
-          plan = job.manifest.accounts.find((plan) => plan.source === row.account)!;
-        const amount = decimalMinor(row.amount, plan.currency),
-          fingerprint = legacyKey(row, amount);
-        if (i < job.row) continue;
-        if (worked >= maxRows || this.now() >= deadline) break;
-        const accountId = job.accountIds[row.account]!;
-        if (!ensured.has(row.account)) {
-          await this.ensureAccount(job, row.account);
-          ensured.add(row.account);
-        }
-        const ordinal = row.sourceId
-          ? null
-          : await this.get<{ value: number }>(`ord_${job.id}_${job.chunk}_${i}`, householdId);
-        if (!row.sourceId && !ordinal) throw new Error("Missing validated legacy identity.");
-        const identity = row.sourceId
-          ? ["id", row.sourceId]
-          : ["legacy", fingerprint, ordinal!.data.value];
-        const txid = `txn_m_${await digest([householdId, accountId, identity])}`;
-        const result = await this.importRow(job, row, txid, accountId, amount);
-        job[result]++;
-        job.processed++;
-        job.row = i + 1;
-        worked++;
+      const ensured = new Map<string, Promise<void>>();
+      while (job.row < rows.length && worked < maxRows && this.now() < deadline) {
+        const start = job.row;
+        const batch = rows.slice(start, start + Math.min(IMPORT_BATCH_ROWS, maxRows - worked));
+        const results = await mapImportBatch(batch, row => this.rowKey(job, row), async (row, offset) => {
+          const index = start + offset;
+          const plan = job.manifest.accounts.find(plan => plan.source === row.account)!;
+          const amount = decimalMinor(row.amount, plan.currency);
+          const accountId = job.accountIds[row.account]!;
+          if (!ensured.has(row.account)) ensured.set(row.account, this.ensureAccount(job, row.account));
+          await ensured.get(row.account);
+          const ordinal = row.sourceId ? null
+            : await this.get<{ value: number }>(`ord_${job.id}_${job.chunk}_${index}`, householdId);
+          if (!row.sourceId && !ordinal) throw new Error("Missing validated legacy identity.");
+          const identity = row.sourceId ? ["id", row.sourceId]
+            : ["legacy", legacyKey(row, amount), ordinal!.data.value];
+          const txid = `txn_m_${await digest([householdId, accountId, identity])}`;
+          return this.importRow(job, row, txid, accountId, amount, `${job.chunk}:${index}`);
+        });
+        for (const result of results) job[result]++;
+        job.row += batch.length;
+        job.processed += batch.length;
+        worked += batch.length;
+        if (this.performance) this.performance.rows += batch.length;
       }
       if (job.row === rows.length) {
         job.chunk++;
@@ -480,6 +454,61 @@ export class MonarchImport {
       return this.summary(job);
     }
     return this.summary(job);
+  }
+  private async validateRow(job: ImportJob, row: SourceRow, index: number) {
+    validateSource(row);
+    const plan = job.manifest.accounts.find((plan) => plan.source === row.account);
+    if (!plan || (row.category && !Object.hasOwn(job.manifest.categories, row.category)))
+      throw new Error(`Line ${row.line}: missing account or category mapping.`);
+    const amount = decimalMinor(row.amount, plan.currency);
+    tagsFor(row.tags, job.manifest.tagEncoding);
+    if (row.sourceId) {
+      const key = `seen_${await digest([job.id, row.account, row.sourceId])}`;
+      const hash = await digest({ ...row, line: 0 });
+      const prior = await this.get<{ hash: string; position: string }>(key, job.householdId);
+      const position = `${job.chunk}:${index}`;
+      if (prior && prior.data.hash !== hash)
+        throw new Error(`Line ${row.line}: the same source ID has conflicting rows.`);
+      if (prior && prior.data.position !== position) return null;
+      if (!prior)
+        await this.put(key, job.householdId, "validation", { hash, position }, null, {
+          job_id: job.id,
+        });
+    }
+    if (!row.sourceId) {
+      const counterId = `occ_${await digest([job.id, legacyKey(row, amount)])}`;
+      const ordinalId = `ord_${job.id}_${job.chunk}_${index}`;
+      let ordinal = await this.get<{ value: number }>(ordinalId, job.householdId);
+      let counter = await this.get<{ value: number }>(counterId, job.householdId);
+      if (!ordinal) {
+        await this.put(
+          ordinalId,
+          job.householdId,
+          "ordinal",
+          { value: (counter?.data.value ?? 0) + 1 },
+          null,
+          { job_id: job.id },
+        );
+        ordinal = await this.get(ordinalId, job.householdId);
+      }
+      if (!ordinal) throw new Error("Cannot persist a legacy occurrence identity.");
+      if ((counter?.data.value ?? 0) < ordinal.data.value)
+        await this.put(
+          counterId,
+          job.householdId,
+          "occurrence",
+          ordinal.data,
+          counter?.doc ?? null,
+          { job_id: job.id },
+        );
+    }
+    return { row, plan, amount };
+  }
+  private rowKey(job: ImportJob, row: SourceRow): string {
+    const plan = job.manifest.accounts.find(plan => plan.source === row.account);
+    if (!plan) throw new Error(`Line ${row.line}: missing account mapping.`);
+    return row.sourceId ? JSON.stringify([row.account, row.sourceId])
+      : legacyKey(row, decimalMinor(row.amount, plan.currency));
   }
   private async ensureAccount(job: ImportJob, source: string) {
     const plan = job.manifest.accounts.find((plan) => plan.source === source)!;
@@ -560,8 +589,18 @@ export class MonarchImport {
   private async taxonomy(job: ImportJob, kind: "category" | "tag", name: string): Promise<string> {
     const categoryKind = kind === "category" ? job.manifest.categories[name] : undefined;
     const id = `tax_m_${await digest([job.householdId, kind, name, categoryKind ?? ""])}`;
+    let pending = this.taxonomyCache.get(id);
+    if (!pending) {
+      pending = this.ensureTaxonomy(job, kind, name, categoryKind, id);
+      this.taxonomyCache.set(id, pending);
+    }
+    return pending;
+  }
+  private async ensureTaxonomy(job: ImportJob, kind: "category" | "tag", name: string,
+    categoryKind: string | undefined, id: string): Promise<string> {
     const existing = await this.store.read("taxonomy", id);
-    if (!existing)
+    if (!existing) {
+      const parentId = kind === "category" ? await this.importGroup(job, name, categoryKind === "custom" ? undefined : categoryKind as FinancialType) : undefined;
       await this.store.write(
         "taxonomy",
         id,
@@ -573,12 +612,42 @@ export class MonarchImport {
           kind,
           name,
           ...(categoryKind && categoryKind !== "custom" ? { category_kind: categoryKind } : {}),
+          ...(parentId ? { parent_id: parentId, sort_order: 1000 } : {}),
         },
         null,
       );
-    else if (existing._deleted || existing.body.household_id !== job.householdId)
+    } else if (existing._deleted || existing.body.household_id !== job.householdId)
       throw new Error("Imported taxonomy is unavailable.");
     return id;
+  }
+  private async importGroup(job: ImportJob, name: string, kind: FinancialType | undefined): Promise<string> {
+    const suggested = suggestedGroupDocument(job.householdId, name, kind, this.now());
+    const key = `group:${suggested.id}`;
+    let pending = this.taxonomyCache.get(key);
+    if (!pending) {
+      pending = (async () => {
+        let id = suggested.id;
+        let current = await this.store.read("taxonomy", id);
+        if (current && (current._deleted || current.body.archived || current.body.category_kind !== kind)) {
+          id = `${id}_import_${kind ?? "custom"}`;
+          current = await this.store.read("taxonomy", id);
+        }
+        if (current) {
+          if (current._deleted || current.body.archived || current.body.household_id !== job.householdId || current.body.kind !== "group" || current.body.category_kind !== kind)
+            throw new Error("The suggested import group is unavailable. Restore it or choose another category mapping.");
+        } else {
+          try { await this.store.write("taxonomy", id, { ...suggested, id }, null); }
+          catch (error) {
+            // Another importer/device can seed the deterministic group concurrently.
+            const winner = await this.store.read("taxonomy", id);
+            if (!winner || winner._deleted || winner.body.archived || winner.body.kind !== "group" || winner.body.household_id !== job.householdId || winner.body.category_kind !== kind) throw error;
+          }
+        }
+        return id;
+      })();
+      this.taxonomyCache.set(key, pending);
+    }
+    return pending;
   }
   private async importRow(
     job: ImportJob,
@@ -586,6 +655,7 @@ export class MonarchImport {
     id: string,
     accountId: string,
     amount: number,
+    position: string,
   ): Promise<"created" | "duplicates" | "conflicts"> {
     const provenanceId = `src_${id}`,
       hash = await digest({ ...row, line: 0 }),
@@ -604,7 +674,7 @@ export class MonarchImport {
       return "conflicts";
     }
     if (prior?.data.state === "complete")
-      return prior.data.jobId === job.id && prior.data.position === `${job.chunk}:${job.row}`
+      return prior.data.jobId === job.id && prior.data.position === position
         ? "created"
         : "duplicates";
     let intent = prior;
@@ -643,7 +713,7 @@ export class MonarchImport {
           intended,
           state: "intent",
           jobId: job.id,
-          position: `${job.chunk}:${job.row}`,
+          position,
         },
         null,
         { account_id: accountId },

@@ -9,7 +9,8 @@ Rational must preserve a user's Monarch transaction history before switching to 
 - Accept an optional Monarch balance CSV to establish accurate balances without adding transaction history on top of a current-balance snapshot.
 - Run accepted imports as durable, bounded Mako Cloud jobs, with progress, retries and cancellation available after the browser closes.
 - Keep existing-account Plaid linking and make it discoverable from an imported account. Preserve account identity and imported metadata.
-- Reconcile overlapping CSV and Plaid transactions one-to-one; require review for ambiguous candidates instead of silently deleting, merging or double-booking them.
+- Reconcile overlapping CSV and Plaid transactions automatically and one-to-one, preserving duplicate occurrences and annotations; unmatched bank records enter the ledger normally.
+- Store daily reported account balances separately from transactions; use the latest source balance for current totals and transaction-derived estimates for historical gaps.
 - Preserve the generic single-account CSV importer and the independent Rational Investment ledger.
 
 ## Capabilities

@@ -1,6 +1,7 @@
 import { previousMonth } from "../../functions/shared/budgets.js";
 import type {
   Account,
+  AccountBalanceSnapshot,
   AlertDocument,
   Budget,
   BudgetMode,
@@ -42,6 +43,7 @@ export interface DashboardInput {
   readonly recurrences: readonly Recurrence[];
   readonly goals: readonly Goal[];
   readonly alerts: readonly AlertDocument[];
+  readonly reportedBalances?: readonly AccountBalanceSnapshot[];
   readonly snapshots: readonly NetWorthSnapshot[];
   readonly today: string;
   /** The household's currency; every figure is in it, nothing is converted. */
@@ -73,7 +75,7 @@ export const DASHBOARD_TRANSACTIONS = 5;
 
 export function dashboardSummary(input: DashboardInput): DashboardSummary {
   const { accounts, transactions, taxonomy, today, currency } = input;
-  const balances = accountBalances(accounts, transactions);
+  const balances = accountBalances(accounts, transactions, input.reportedBalances);
   const thisMonth = monthKey(today);
   const lastMonth = previousMonth(thisMonth);
   const spendingIn = (month: string): number =>
@@ -98,7 +100,7 @@ export function dashboardSummary(input: DashboardInput): DashboardSummary {
     goals: goalRows(input.goals, balances, today)
       .filter((row) => row.goal.status === "active")
       .slice(0, DASHBOARD_GOALS),
-    reviewCount: reviewCount(transactions),
+    reviewCount: reviewCount(transactions, taxonomy),
     unreadAlerts: unreadCount(input.alerts),
     recentTransactions: applyTransactionQuery(
       transactions,

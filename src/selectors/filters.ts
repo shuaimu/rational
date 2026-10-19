@@ -4,7 +4,7 @@ import { isCategory, type TaxonomyEntry, type Transaction } from "../model/types
 import { memoizeLast } from "./memo.js";
 import { merchantResolver } from "./merchants.js";
 import { amountToText } from "./money.js";
-import { needsReview } from "./review.js";
+import { reviewPredicate } from "./review.js";
 import { isIsoDate, monthKey, sortTransactions } from "./transactions.js";
 
 /**
@@ -163,6 +163,7 @@ function queryPredicate(
   query: TransactionQuery,
   context: TransactionQueryContext,
 ): (transaction: Transaction) => boolean {
+  const needsReview = reviewPredicate(context.categories);
   const normalize = context.normalize ?? normalizeDescription;
   const groupCategories =
     query.groupId === undefined

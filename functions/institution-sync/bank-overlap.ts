@@ -22,6 +22,8 @@ interface Identity {
   candidates: string[];
   reason: string;
   removal: boolean;
+  statement?: string;
+  resolution?: "matched" | "separate" | "preserved-local-edit" | "preserved-local-deletion";
 }
 export interface OverlapReview {
   id: string;
@@ -36,10 +38,14 @@ const sameMoney = (body: JsonObject, fields: BankFields) =>
   body.amount === fields.amount &&
   body.currency === fields.currency &&
   body.account_id === fields.account_id;
+const matchText = (value: string) => normalizeSource(value).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+const meaningful = (value: string) => value.length >= 3 &&
+  !["payment", "transfer", "deposit", "withdrawal", "debit", "credit", "purchase"].includes(value);
+interface ImportedCandidate { tx: FunctionDocument; statement: string; merchant: string }
 export class BankOverlap {
   private store: PlaidStore;
   private now: () => number;
-  private candidates = new Map<string, { tx: FunctionDocument; statement: string }[]>();
+  private candidates = new Map<string, ImportedCandidate[]>();
   constructor(store: PlaidStore, now: () => number = Date.now) {
     this.store = store;
     this.now = now;
@@ -101,12 +107,6 @@ export class BankOverlap {
     let identity: Identity;
     if (prior) {
       identity = JSON.parse(String(prior.body.data));
-      if (identity.state === "review") {
-        identity.fields = fields;
-        identity.removal = false;
-        await this.write(id, hh, identity, prior);
-        return true;
-      }
       if (identity.state === "intent") {
         await this.apply(id, hh, identity, prior);
         prior = await this.store.read(STORE, id);
@@ -123,89 +123,111 @@ export class BankOverlap {
         previous: identity.fields,
         fields,
         removal: false,
+        statement,
       };
+      if (!identity.transactionId) identity = await this.match(id, hh, identity);
     } else {
-      const candidates: FunctionDocument[] = [];
-      let imported = this.candidates.get(fields.account_id);
-      if (!imported) {
-        const [sources, ledger] = await Promise.all([
-          this.store.list(STORE, "account_id", fields.account_id),
-          this.store.list("transactions", "account_id", fields.account_id),
-        ]);
-        const transactions = new Map(
-          ledger
-            .filter((tx) => !tx._deleted && tx.body.household_id === hh)
-            .map((tx) => [String(tx.body.id), tx]),
-        );
-        imported = [];
-        for (const source of sources) {
-          if (source._deleted || source.body.household_id !== hh || source.body.kind !== "source")
-            continue;
-          const data = JSON.parse(String(source.body.data)),
-            tx = transactions.get(String(data.transactionId));
-          if (tx) imported.push({ tx, statement: String(data.source.statement) });
-        }
-        this.candidates.set(fields.account_id, imported);
-      }
-      for (const { tx, statement: original } of imported) {
-        if (tx.body.amount !== fields.amount || tx.body.currency !== fields.currency) continue;
-        const delta =
-          Math.abs(Date.parse(String(tx.body.date)) - Date.parse(fields.date)) / 86400000;
-        if (delta <= 3)
-          candidates.push({ ...tx, body: { ...tx.body, source_statement: original } });
-      }
-      const exact = candidates.filter(
-        (tx) =>
-          tx.body.date === fields.date &&
-          statement.trim() !== "" &&
-          normalizeSource(String(tx.body.source_statement)) === normalizeSource(statement),
-      );
-      const unique = exact.length === 1 && candidates.length === 1 ? exact[0] : null;
-      const claim = unique ? await this.store.read(STORE, `claim_${unique.body.id}`) : null;
-      const target =
-        unique && !claim
-          ? String(unique.body.id)
-          : candidates.length
-            ? null
-            : transactionId(fields.account_id, fields.external_id);
-      identity = {
+      identity = await this.match(id, hh, {
         linkId,
         providerId: fields.external_id,
         accountId: fields.account_id,
-        transactionId: target,
-        state: target ? "intent" : "review",
+        transactionId: null,
+        state: "intent",
         fields,
-        previous:
-          unique && !claim
-            ? {
-                ...fields,
-                date: String(unique.body.date),
-                amount: Number(unique.body.amount),
-                description: String(unique.body.description),
-              }
-            : null,
-        candidates: candidates.map((tx) => String(tx.body.id)),
-        reason: target
-          ? ""
-          : "Possible overlap with imported history; choose one transaction to merge or keep it separate.",
+        previous: null,
+        candidates: [],
+        reason: "",
         removal: false,
-      };
+        statement,
+      });
     }
     await this.write(id, hh, identity, prior);
-    if (identity.state === "review") return true;
     await this.apply(id, hh, identity, (await this.store.read(STORE, id))!);
     return false;
+  }
+
+  /** Match occurrences one-to-one, with source evidence before posting-date proximity. */
+  private async match(id: string, hh: string, identity: Identity): Promise<Identity> {
+    const fields = identity.fields;
+    const key = JSON.stringify([hh, fields.account_id]);
+    let imported = this.candidates.get(key);
+    if (!imported) {
+      const [sources, ledger] = await Promise.all([
+        this.store.list(STORE, "account_id", fields.account_id),
+        this.store.list("transactions", "account_id", fields.account_id),
+      ]);
+      const transactions = new Map(ledger.filter(tx => !tx._deleted && tx.body.household_id === hh)
+        .map(tx => [String(tx.body.id), tx]));
+      const unique = new Map<string, ImportedCandidate>();
+      for (const source of sources) {
+        if (source._deleted || source.body.household_id !== hh || source.body.kind !== "source") continue;
+        const data = JSON.parse(String(source.body.data));
+        const tx = transactions.get(String(data.transactionId));
+        if (tx) unique.set(String(tx.body.id), { tx,
+          statement: String(data.source.statement ?? ""), merchant: String(data.source.merchant ?? "") });
+      }
+      imported = [...unique.values()];
+      this.candidates.set(key, imported);
+    }
+    const providerTexts = [identity.statement ?? "", fields.description].map(matchText).filter(meaningful);
+    const ranked = imported.flatMap(candidate => {
+      const tx = candidate.tx;
+      if (tx.body.amount !== fields.amount || tx.body.currency !== fields.currency || tx.body.account_id !== fields.account_id) return [];
+      const days = Math.abs(Date.parse(String(tx.body.date)) - Date.parse(fields.date)) / 86_400_000;
+      if (!Number.isFinite(days) || days > 3) return [];
+      const source = matchText(candidate.statement);
+      const merchant = [candidate.merchant, String(tx.body.description)].map(matchText).filter(meaningful);
+      const score = meaningful(source) && providerTexts.includes(source) ? 2
+        : merchant.some(text => providerTexts.includes(text)) ? 1 : 0;
+      // Equal amounts alone are not enough to collapse unrelated purchases.
+      return score ? [{ ...candidate, days, score }] : [];
+    }).sort((a, b) => b.score - a.score || a.days - b.days || String(a.tx.body.id).localeCompare(String(b.tx.body.id)));
+    for (const candidate of ranked) {
+      const target = String(candidate.tx.body.id);
+      const claim = await this.store.read(STORE, `claim_${target}`);
+      this.check(claim, hh);
+      if (claim && JSON.parse(String(claim.body.data)).identityId !== id) continue;
+      // A user edit or deletion may have arrived since this account's cache loaded.
+      const tx = await this.store.read("transactions", target);
+      this.check(tx, hh);
+      if (!tx || tx._deleted || tx.body.account_id !== fields.account_id ||
+        tx.body.amount !== fields.amount || tx.body.currency !== fields.currency ||
+        tx.body.date !== candidate.tx.body.date) continue;
+      return { ...identity, transactionId: target, state: "intent", candidates: [target], reason: "",
+        previous: { ...fields, date: String(tx.body.date), description: String(tx.body.description) }, resolution: "matched" };
+    }
+    return { ...identity, transactionId: transactionId(fields.account_id, fields.external_id),
+      state: "intent", previous: null, candidates: [], reason: "", resolution: "separate" };
+  }
+
+  /** Old queued reviews also finish without requiring another provider delivery or a browser. */
+  async reconcilePending(linkId: string, hh: string, accountId: string, limit = 20): Promise<boolean> {
+    const pending = (await this.store.list(STORE, "account_id", accountId)).filter(doc => {
+      if (doc._deleted || doc.body.household_id !== hh || doc.body.kind !== "bank-identity" ||
+        !["review", "intent"].includes(String(doc.body.state))) return false;
+      return (JSON.parse(String(doc.body.data)) as Identity).linkId === linkId;
+    }).sort((a, b) => String(a.body.id).localeCompare(String(b.body.id)));
+    for (const prior of pending.slice(0, limit)) {
+      const id = String(prior.body.id);
+      let identity = JSON.parse(String(prior.body.data)) as Identity;
+      if (!identity.transactionId && identity.removal) {
+        await this.write(id, hh, { ...identity, state: "removed", reason: "" }, prior);
+        continue;
+      }
+      identity = identity.transactionId ? { ...identity, state: "intent", reason: "" } : await this.match(id, hh, identity);
+      await this.write(id, hh, identity, prior);
+      await this.apply(id, hh, identity, (await this.store.read(STORE, id))!);
+    }
+    return pending.length > limit;
   }
   private async claim(id: string, hh: string, identity: Identity) {
     const key = `claim_${identity.transactionId}`,
       prior = await this.store.read(STORE, key);
     this.check(prior, hh);
     if (prior && JSON.parse(String(prior.body.data)).identityId !== id)
-      throw new Error(
-        "That transaction is already matched to a different bank transaction. Keep this entry separate.",
-      );
+      return false;
     if (!prior)
-      await this.store.write(
+      try { await this.store.write(
         STORE,
         key,
         {
@@ -218,7 +240,13 @@ export class BankOverlap {
           data: JSON.stringify({ identityId: id }),
         },
         null,
-      );
+      ); } catch (error) {
+        const raced = await this.store.read(STORE, key);
+        this.check(raced, hh);
+        if (raced && JSON.parse(String(raced.body.data)).identityId !== id) return false;
+        if (!raced) throw error;
+      }
+    return true;
   }
   private async apply(
     id: string,
@@ -226,26 +254,31 @@ export class BankOverlap {
     identity: Identity,
     prior: FunctionDocument,
   ): Promise<void> {
-    if (!identity.transactionId) throw new Error("Choose an overlap resolution first.");
-    await this.claim(id, hh, identity);
+    if (!identity.transactionId) throw new Error("Bank reconciliation has no transaction identity.");
+    if (!(await this.claim(id, hh, identity))) {
+      if (identity.transactionId === transactionId(identity.accountId, identity.providerId))
+        throw new Error("This provider identity is already associated with another bank link.");
+      const next = await this.match(id, hh, identity);
+      await this.write(id, hh, next, prior);
+      return this.apply(id, hh, next, (await this.store.read(STORE, id))!);
+    }
     const tx = await this.store.read("transactions", identity.transactionId);
     this.check(tx, hh);
     if (
       tx &&
-      !tx._deleted &&
       identity.previous &&
-      !sameMoney(tx.body, identity.previous) &&
-      !sameMoney(tx.body, identity.fields)
+      (tx._deleted || (!sameMoney(tx.body, identity.previous) && !sameMoney(tx.body, identity.fields)) ||
+        (Array.isArray(tx.body.splits) && tx.body.splits.length > 0 && tx.body.amount !== identity.fields.amount))
     ) {
       await this.write(
         id,
         hh,
         {
           ...identity,
-          state: "review",
-          candidates: [identity.transactionId],
-          reason:
-            "Financial fields changed after the prior import. Review this bank correction before replacing your edits.",
+          state: identity.removal ? "removed" : "applied",
+          previous: identity.fields,
+          reason: "",
+          resolution: tx._deleted ? "preserved-local-deletion" : "preserved-local-edit",
         },
         prior,
       );
@@ -366,7 +399,7 @@ export class BankOverlap {
           }
         : null,
     };
-    await this.claim(id, hh, next);
+    if (!(await this.claim(id, hh, next))) throw new Error("That transaction is already matched.");
     await this.write(id, hh, next, prior);
     await this.apply(id, hh, next, (await this.store.read(STORE, id))!);
   }

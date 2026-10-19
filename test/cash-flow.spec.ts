@@ -13,7 +13,7 @@ const EMAIL = "flow@rational.test";
 const PASSWORD = "RationalDemo1!";
 const QUARTER = "2025-Q2";
 
-/** `2026-08` for a run in September 2026: the month the "Last month" preset means. */
+/** `2026-08` for a run in September 2026: the previous calendar month. */
 function lastMonthKey(): string {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
@@ -107,6 +107,10 @@ async function seed(page: Page): Promise<Seeded> {
     const paychecks = await writes.createCategory("Paychecks", "income", { groupId: income.id });
     const rent = await writes.createCategory("Rent", "expense", { groupId: housing.id });
     const groceries = await writes.createCategory("Groceries", "expense", { groupId: food.id });
+    const transferCategory = await writes.createCategory("Transfer", "transfer");
+    const cardPaymentCategory = await writes.createCategory("Credit Card Payment", "transfer");
+    const buyCategory = await writes.createCategory("Buy", "expense");
+    const sellCategory = await writes.createCategory("Sell", "income");
     const shared = await writes.createTag("shared");
     const book = (
       accountId: string,
@@ -143,7 +147,14 @@ async function seed(page: Page): Promise<Seeded> {
     await writes.pairTransfer(out.id, into.id);
     await book(checking.id, "2025-05-20", 9_999, "Venmo reimbursement", { hidden: true });
     await writes.updateTrackedBalance(house.id, 31_000_000, "2025-05-25");
-    // Last month, for the preset: one paycheck and one grocery run.
+    // CSV imports carry the transfer category without a paired transfer_id.
+    await book(checking.id, "2025-05-16", 150_000_000, "Imported transfer in", { category_id: transferCategory.id });
+    await book(checking.id, "2025-05-17", -140_000_000, "Imported transfer out", { category_id: transferCategory.id });
+    await book(checking.id, "2025-05-18", 20_000_000, "Imported card payment in", { category_id: cardPaymentCategory.id });
+    await book(checking.id, "2025-05-19", -30_000_000, "Imported card payment out", { category_id: cardPaymentCategory.id });
+    await book(checking.id, "2025-05-20", -50_000_000, "Imported Buy", { category_id: buyCategory.id });
+    await book(checking.id, "2025-05-21", 70_000_000, "Imported Sell", { category_id: sellCategory.id });
+    // Last month, for period navigation: one paycheck and one grocery run.
     await book(checking.id, `${lastMonth}-03`, 10_000, "ACME payroll", {
       category_id: paychecks.id,
     });
@@ -201,6 +212,7 @@ test("a quarter's tiles count only the ordinary transactions", async ({ page }) 
   await expect(merchants.getByTestId("total")).toHaveText("$5,400.00");
 
   await expect(page.getByTestId("exclusions-note")).toContainText("balance updates");
+  await expect(page.getByTestId("exclusions-note")).toContainText("without a linked transfer pair");
 });
 
 test("the flow conserves: groups and categories both total the spending tile", async ({ page }) => {
@@ -243,7 +255,11 @@ test("the range picker moves the address and the tiles", async ({ page }) => {
   const tiles = page.getByTestId("cash-flow-summary-USD");
   await expect(tiles.getByTestId("income")).toHaveText("$12,000.00");
 
-  await page.getByRole("button", { name: "Last month" }).click();
+  await page.getByRole("button", { name: "Monthly", exact: true }).click();
+  await expect(page.getByTestId("range-label")).toHaveText("April 2025");
+  await page.getByRole("button", { name: /^Choose period:/u }).click();
+  await page.getByRole("button", { name: "This month", exact: true }).click();
+  await page.getByRole("button", { name: "Previous period" }).click();
   const lastMonth = lastMonthKey();
   await expect(page).toHaveURL(new RegExp(`#/cash-flow\\?range=${lastMonth}$`, "u"));
   await expect(tiles.getByTestId("income")).toHaveText("$100.00");
@@ -261,6 +277,126 @@ test("the range picker moves the address and the tiles", async ({ page }) => {
   await page.goto(`/#/cash-flow?range=${QUARTER}`);
   await expect(page.getByTestId("range-label")).toHaveText("Q2 2025");
   await expect(tiles.getByTestId("income")).toHaveText("$12,000.00");
+});
+
+test("calendar periods keep the chosen month, support year jumps, and survive reloads", async ({ page }) => {
+  await signUpIntoOwnSpace(page);
+  await seed(page);
+  await page.goto("/#/cash-flow?range=2025-05&view=account");
+  const picker = page.getByTestId("range-bar");
+  const label = page.getByTestId("range-label");
+  const income = page.getByTestId("cash-flow-summary-USD").getByTestId("income");
+  await expect(income).toHaveText("$4,000.00");
+
+  await picker.getByRole("button", { name: "Quarterly", exact: true }).click();
+  await expect(label).toHaveText("Q2 2025");
+  await expect(income).toHaveText("$12,000.00");
+  await picker.getByRole("button", { name: "Yearly", exact: true }).click();
+  await expect(label).toHaveText("2025");
+  await picker.getByRole("button", { name: "Monthly", exact: true }).click();
+  await expect(label).toHaveText("May 2025");
+  await expect(page).toHaveURL(/range=2025-05&view=account$/u);
+
+  await picker.getByRole("button", { name: /^Choose period:/u }).click();
+  const dialog = page.getByRole("dialog", { name: "Choose cash flow period" });
+  await dialog.getByRole("button", { name: "Choose year: 2025" }).click();
+  await dialog.getByRole("button", { name: "2024", exact: true }).click();
+  await dialog.getByRole("button", { name: "December 2024", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(label).toHaveText("December 2024");
+  await picker.getByRole("button", { name: "Next period" }).click();
+  await expect(label).toHaveText("January 2025");
+  await picker.getByRole("button", { name: "Quarterly", exact: true }).click();
+  await picker.getByRole("button", { name: "Previous period" }).click();
+  await expect(label).toHaveText("Q4 2024");
+  await picker.getByRole("button", { name: /^Choose period:/u }).click();
+  await dialog.getByRole("button", { name: "Q2 2024", exact: true }).click();
+  await expect(label).toHaveText("Q2 2024");
+
+  await picker.getByRole("button", { name: "Yearly", exact: true }).click();
+  await picker.getByRole("button", { name: /^Choose period:/u }).click();
+  await dialog.getByRole("button", { name: "2025", exact: true }).click();
+  await expect(income).toHaveText("$12,000.00");
+  await page.reload();
+  await expect(label).toHaveText("2025");
+  await expect(picker.getByRole("button", { name: "Yearly", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page).toHaveURL(/range=2025&view=account$/u);
+});
+
+test("custom dates and all time stay available in the compact picker on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signUpIntoOwnSpace(page);
+  await seed(page);
+  await page.goto(`/#/cash-flow?range=${QUARTER}`);
+  const picker = page.getByTestId("range-bar");
+  const plotWidth = await page.getByTestId("comparison-scroll").evaluate((element) => element.clientWidth);
+  expect(plotWidth).toBeLessThan(390);
+  const trigger = picker.getByRole("button", { name: /^Choose period:/u });
+  await trigger.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Choose cash flow period" });
+  await expect(dialog).toBeVisible();
+  const bounds = await dialog.boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  await dialog.getByRole("button", { name: "Custom dates", exact: true }).click();
+  // Reversed endpoints are normalized, and the custom range drives the real totals.
+  await dialog.getByLabel("From", { exact: true }).fill("2025-06-30");
+  await dialog.getByLabel("To", { exact: true }).fill("2025-04-01");
+  await dialog.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(page.getByTestId("range-label")).toHaveText("Apr 1, 2025 – Jun 30, 2025");
+  await expect(page.getByTestId("cash-flow-summary-USD").getByTestId("income")).toHaveText("$12,000.00");
+  await expect(picker.getByRole("button", { name: "Previous period" })).toHaveCount(0);
+  await trigger.click();
+  await dialog.getByRole("button", { name: "Back to calendar" }).click();
+  await dialog.getByRole("button", { name: "All time", exact: true }).click();
+  await expect(page.getByTestId("range-label")).toHaveText("All time");
+  await expect(page.getByTestId("cash-flow-summary-USD").getByTestId("income")).toHaveText("$12,100.00");
+  await trigger.click();
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(trigger).toBeFocused();
+});
+
+test("chart modes compare full years, quarters, and months; selecting bars changes only the details", async ({ page }) => {
+  await signUpIntoOwnSpace(page);
+  await seed(page);
+  await page.goto(`/#/cash-flow?range=${QUARTER}&view=account`);
+  const chart = page.getByTestId("cash-flow-comparison");
+  const income = page.getByTestId("cash-flow-summary-USD").getByTestId("income");
+  const picker = page.getByTestId("range-bar");
+  await picker.getByRole("button", { name: "Yearly", exact: true }).click();
+  await expect(chart.getByRole("heading")).toHaveText("Income and spending by year");
+  const otherYear = lastMonthKey().slice(0, 4);
+  const yearSpan = await chart.getByTestId("comparison-span").innerText();
+  await chart.getByRole("button", { name: `${otherYear} — Income: $100.00`, exact: true }).click();
+  await expect(income).toHaveText("$100.00");
+  await expect(page.getByTestId("selected-period-heading")).toHaveText(otherYear);
+  await expect(chart.getByTestId("comparison-span")).toHaveText(yearSpan);
+  await chart.getByRole("button", { name: "2025 — Income: $12,000.00", exact: true }).press("Enter");
+  await expect(income).toHaveText("$12,000.00");
+  await expect(page).toHaveURL(/range=2025&view=account$/u);
+  await expect(chart.getByRole("button", { name: "2025 — Spending: $5,400.00", exact: true })).toHaveAttribute("aria-pressed", "true");
+
+  await picker.getByRole("button", { name: "Quarterly", exact: true }).click();
+  await expect(chart.getByRole("heading")).toHaveText("Income and spending by quarter");
+  await chart.getByRole("button", { name: "Q2 '25 — Income: $12,000.00", exact: true }).click();
+  await expect(income).toHaveText("$12,000.00");
+  await expect(page.getByTestId("selected-period-heading")).toHaveText("Q2 2025");
+  await chart.getByText("Quarter by quarter", { exact: true }).click();
+  await expect(chart.getByTestId("period-2025-Q2").getByTestId("spending")).toHaveText("$5,400.00");
+
+  await picker.getByRole("button", { name: "Monthly", exact: true }).click();
+  await expect(chart.getByRole("heading")).toHaveText("Income and spending by month");
+  await chart.getByRole("button", { name: "May '25 — Income: $4,000.00", exact: true }).click();
+  await expect(income).toHaveText("$4,000.00");
+  await expect(page.getByTestId("selected-period-heading")).toHaveText("May 2025");
+  await expect(page).toHaveURL(/range=2025-05&view=account$/u);
+  await chart.getByRole("button", { name: "Later months", exact: true }).click();
+  await expect(chart.getByRole("button", { name: "Earlier months", exact: true })).toBeEnabled();
+  await expect(page.getByTestId("selected-period-heading")).toHaveText("May 2025");
+  await expect(income).toHaveText("$4,000.00");
+  await page.reload();
+  await expect(chart.getByRole("button", { name: "May '25 — Income: $4,000.00", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
 
 test("picking a category in the treemap trends it", async ({ page }) => {

@@ -9,7 +9,8 @@ import {
   type MakoResyncReason,
   type MakoSanitizedReplicationError,
 } from "@mako-cloud/rxdb";
-import { BehaviorSubject, type Observable } from "rxjs";
+import { BehaviorSubject, defer, type Observable } from "rxjs";
+import { ScopeTabs } from "./scope-tabs.js";
 
 import { SCHEMA_VERSION } from "../model/collections.js";
 import type { CollectionId } from "../model/types.js";
@@ -64,6 +65,7 @@ export interface ScopeState {
   readonly syncedAt: number | null;
   /** The first pull cycle of this generation completed, so local data reflects the server. */
   readonly initialSynced: boolean;
+  readonly syncing: boolean;
   readonly notice: string | null;
 }
 
@@ -82,6 +84,7 @@ const INITIAL_STATE: ScopeState = {
   streamResyncs: 0,
   syncedAt: null,
   initialSynced: false,
+  syncing: false,
   notice: null,
 };
 
@@ -98,18 +101,19 @@ export class ScopeSession<Ids extends CollectionId> {
   readonly database: RationalDatabase<Ids>;
   readonly replications: ReadonlyMap<Ids, CollectionReplication<unknown>>;
   readonly identifier: string;
-  readonly #live: MakoLiveStreamGroup;
+  readonly #live: MakoLiveStreamGroup | null;
   readonly #dependencies: ReplicationDependencies;
   readonly #householdId: string | undefined;
   #pollTimer: ReturnType<typeof setInterval> | null = null;
   #stopped = false;
+  tabs: ScopeTabs<Pick<ScopeState, "initialSynced" | "syncedAt" | "syncing" | "lastError" | "activity">> | null = null;
 
   constructor(
     database: RationalDatabase<Ids>,
     replications: ReadonlyMap<Ids, CollectionReplication<unknown>>,
     identifier: string,
     pollIntervalMs: number,
-    live: MakoLiveStreamGroup,
+    live: MakoLiveStreamGroup | null,
     dependencies: ReplicationDependencies,
     householdId?: string,
   ) {
@@ -139,17 +143,24 @@ export class ScopeSession<Ids extends CollectionId> {
   }
 
   async resume(): Promise<void> {
+    if (!this.database.isLeader()) return;
     await Promise.all([...this.replications.values()].map((entry) => entry.replication.start()));
     this.reSync();
   }
 
   reSync(): void {
+    if (!this.database.isLeader()) return;
     for (const entry of this.replications.values()) {
       entry.replication.reSync();
     }
   }
 
   async awaitInSync(): Promise<void> {
+    if (!this.database.isLeader() && this.tabs) return this.tabs.sync();
+    await this.awaitOwnSync();
+  }
+
+  async awaitOwnSync(): Promise<void> {
     await Promise.all(
       [...this.replications.values()].map((entry) => entry.replication.awaitInSync()),
     );
@@ -166,7 +177,7 @@ export class ScopeSession<Ids extends CollectionId> {
     this.#stopped = true;
     if (this.#pollTimer !== null) clearInterval(this.#pollTimer);
     this.#pollTimer = null;
-    this.#live.close();
+    this.#live?.close();
     await Promise.all([...this.replications.values()].map((entry) => entry.stop()));
   }
 
@@ -243,17 +254,43 @@ export class ScopeController<Ids extends CollectionId> {
   #refreshInFlight: Promise<void> | null = null;
   #openInFlight: Promise<void> = Promise.resolve();
   #resyncInFlight: Promise<void> | null = null;
+  readonly #tabs: ScopeTabs<Pick<ScopeState, "initialSynced" | "syncedAt" | "syncing" | "lastError" | "activity">>;
+  #resettingPeers = false;
 
   constructor(options: ScopeControllerOptions<Ids>) {
     this.definition = options.definition;
     this.#dependencies = options.dependencies;
     this.#onAuthenticationRequired = options.onAuthenticationRequired;
     this.#state = options.state;
+    this.#tabs = new ScopeTabs(this.definition.databaseName, {
+      isLeader: () => this.#session?.database.isLeader() === true,
+      snapshot: () => ({ initialSynced: this.state.initialSynced, syncedAt: this.state.syncedAt,
+        syncing: this.state.syncing, lastError: this.state.lastError, activity: this.state.activity }),
+      receive: snapshot => {
+        if (this.#session) this.#patch(state => ({ ...state, ...snapshot }));
+      },
+      sync: async () => { this.#session?.reSync(); await this.#session?.awaitOwnSync(); },
+      pauseForReset: async () => {
+        const session = this.#session;
+        this.#session = null;
+        this.#patch(state => ({ ...state, activity: "paused", initialSynced: false, syncing: false }));
+        await session?.close();
+      },
+      resumeAfterReset: async () => {
+        const user = this.#dependencies.auth.currentUser();
+        const security = await this.#state.security.load();
+        if (security) this.#environmentEpoch = security.authorizationEpochs.environment;
+        if (!this.#closed && user) await this.open(user.authorizationEpoch);
+      },
+      sent: () => this.#patch(state => ({ ...state, pendingWrites: Math.max(0, state.pendingWrites - 1) })),
+    });
     this.#security = new MakoAuthorizationEpochCoordinator(
       `rational:${this.definition.name}:v1`,
       {
         pauseReplication: () => this.#session?.pause() ?? Promise.resolve(),
         clearReplicatedCollection: async ({ replicationRunning }) => {
+          await this.#tabs.pausePeers();
+          this.#resettingPeers = true;
           const session = this.#session;
           this.#session = null;
           // Tell the screens first so nothing renders from a database being erased.
@@ -278,6 +315,7 @@ export class ScopeController<Ids extends CollectionId> {
         },
         startReplication: async (identifier) => {
           await this.#open(identifier);
+          this.#resumePeers();
         },
       },
       { persistence: this.#state.security },
@@ -348,6 +386,7 @@ export class ScopeController<Ids extends CollectionId> {
       await this.#recovery.markActive();
     }
     await this.#open(state.replicationIdentifier);
+    this.#resumePeers();
     if (recovery.kind === "full_resync_required") {
       await this.#fullResync(recovery.reason);
     }
@@ -421,6 +460,7 @@ export class ScopeController<Ids extends CollectionId> {
 
   async close(): Promise<void> {
     this.#closed = true;
+    this.#tabs.close();
     await this.#session?.close();
     this.#session = null;
     this.state$.complete();
@@ -434,6 +474,10 @@ export class ScopeController<Ids extends CollectionId> {
     if (session !== null && this.state.pendingWrites > 0 && this.#dependencies.transport.online) {
       await Promise.race([session.awaitInSync(), sleep(REMOVE_FLUSH_MS)]).catch(() => undefined);
     }
+    // IndexedDB removal must wait for every tab's handles to close. The
+    // session/membership change will subsequently close those controllers.
+    await this.#tabs.pausePeers();
+    this.#tabs.close();
     await session?.remove();
     this.#session = null;
     // A database that is gone has no checkpoint to resume from. Left behind,
@@ -492,7 +536,7 @@ export class ScopeController<Ids extends CollectionId> {
     // One connection for every collection in this scope. A stream each would
     // exhaust the six a browser gives a host before half of them were open,
     // and the pulls and pushes would queue behind the ones that were.
-    const live = new MakoLiveStreamGroup(
+    const live = dependencies.config.liveStreams === false ? null : new MakoLiveStreamGroup(
       definition.collectionIds.map((collectionId) =>
         makoConfigFor(dependencies.config, collectionId, definition.householdId),
       ),
@@ -514,7 +558,9 @@ export class ScopeController<Ids extends CollectionId> {
       const replication = startCollectionReplication(collection, collectionId, dependencies, {
         identifier,
         ...(definition.householdId === undefined ? {} : { householdId: definition.householdId }),
-        stream$: live.stream$(collectionId),
+        // RxDB subscribes only after election. Constructing the stream eagerly
+        // would still open one cloud connection in every follower tab.
+        ...(live === null ? {} : { stream$: defer(() => live.stream$<never>(collectionId)) }),
         ...(checkpoints === undefined ? {} : { checkpoints }),
         onResync: (reason) => this.#onResync(reason),
         onError: (error) => this.#onError(error),
@@ -533,14 +579,15 @@ export class ScopeController<Ids extends CollectionId> {
         ),
       );
       replication.subscription.add(
-        replication.signals.sent$.subscribe(() =>
+        replication.signals.sent$.subscribe(() => {
           this.#patch((state) => ({
             ...state,
             sent: state.sent + 1,
             pendingWrites: Math.max(0, state.pendingWrites - 1),
             syncedAt: Date.now(),
-          })),
-        ),
+          }));
+          this.#tabs.sent();
+        }),
       );
       replication.subscription.add(
         replication.signals.conflicts$.subscribe(() =>
@@ -563,18 +610,26 @@ export class ScopeController<Ids extends CollectionId> {
       definition.householdId,
     );
     this.#session = session;
+    session.tabs = this.#tabs;
     this.#patch((state) => ({
       ...state,
       generation: state.generation + 1,
       recovery: { kind: "active" },
       activity: "active",
       initialSynced: false,
+      syncing: false,
       lastError: null,
     }));
+    // The constructor's hello can arrive before this tab opens its database.
+    this.#tabs.requestStatus();
     void session.awaitInitialReplication().then(() => {
       if (this.#session === session) {
         this.#patch((state) => ({ ...state, initialSynced: true, syncedAt: Date.now() }));
       }
+    });
+    // A newly elected leader announces itself even if its first pull is empty.
+    void database.waitForLeadership().then(() => {
+      if (this.#session === session) session.tabs?.publish();
     });
   }
 
@@ -602,6 +657,8 @@ export class ScopeController<Ids extends CollectionId> {
   }
 
   async #runFullResync(reason: string): Promise<void> {
+    await this.#tabs.pausePeers();
+    this.#resettingPeers = true;
     const session = this.#session;
     this.#patch((state) => ({ ...state, activity: "paused" }));
     // Erasing the database would erase the writes in it that were never
@@ -617,8 +674,9 @@ export class ScopeController<Ids extends CollectionId> {
       notice: `Local data was reset (${reason}) and is syncing again from the beginning.`,
     }));
     await this.#state.clearReplicationState();
-    await this.#open(`rational:${this.definition.name}:resync-${Date.now().toString(36)}`);
+    await this.#open(this.#security.currentState()?.replicationIdentifier ?? `rational:${this.definition.name}:v1`);
     await this.#recovery.markActive();
+    this.#resumePeers();
   }
 
   /**
@@ -695,11 +753,20 @@ export class ScopeController<Ids extends CollectionId> {
     if (session === null) return;
     const blocking = this.state.recovery.kind !== "active";
     if (blocking) return;
-    this.#patch((state) => ({ ...state, activity: "active" }));
+    if (!session.database.isLeader()) return;
+    const syncing = [...session.replications.values()].some(entry => entry.replication.subjects.active.value);
+    this.#patch((state) => ({ ...state, activity: "active", syncing }));
   }
 
   #patch(update: (state: ScopeState) => ScopeState): void {
     if (this.state$.closed) return;
     this.state$.next(update(this.state$.value));
+    this.#session?.tabs?.publish();
+  }
+
+  #resumePeers(): void {
+    if (!this.#resettingPeers) return;
+    this.#resettingPeers = false;
+    this.#tabs.resumePeers();
   }
 }

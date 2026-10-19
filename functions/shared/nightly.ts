@@ -16,6 +16,7 @@ import type { AlertBill, AlertGoal } from "./alerts.ts";
 import {
   accountBalances,
   type BalanceAccount,
+  type ReportedBalance,
   type NetWorthAccount,
   netWorth as netWorthOf,
   type SnapshotBalance,
@@ -178,6 +179,7 @@ function balanceAccount(body: DocumentBody): NetWorthAccount {
     : undefined;
   return {
     id: text(body.id),
+    household_id: text(body.household_id),
     opening_balance: Number(body.opening_balance ?? 0),
     type: text(body.type),
     currency: text(body.currency),
@@ -194,14 +196,17 @@ function balanceAccount(body: DocumentBody): NetWorthAccount {
 export function balancesOf(
   accounts: readonly DocumentLike[],
   transactions: readonly DocumentLike[],
+  reports: readonly DocumentLike[] = [],
 ): Map<string, number> {
   const opened: BalanceAccount[] = live(accounts).map(balanceAccount);
   return accountBalances(
     opened,
     live(transactions).map((body) => ({
+      ...body,
       account_id: text(body.account_id),
       amount: Number(body.amount ?? 0),
     })),
+    live(reports) as unknown as ReportedBalance[],
   );
 }
 
@@ -214,11 +219,12 @@ export function netWorth(
   currency: string,
   accounts: readonly DocumentLike[],
   transactions: readonly DocumentLike[],
+  reports: readonly DocumentLike[] = [],
 ): { readonly assets: number; readonly liabilities: number } {
   return netWorthOf(
     currency,
     live(accounts).map(balanceAccount),
-    balancesOf(accounts, transactions),
+    balancesOf(accounts, transactions, reports),
   );
 }
 
@@ -226,8 +232,9 @@ export function netWorth(
 export function snapshotBalances(
   accounts: readonly DocumentLike[],
   transactions: readonly DocumentLike[],
+  reports: readonly DocumentLike[] = [],
 ): SnapshotBalance[] {
-  return snapshotBalancesOf(live(accounts).map(balanceAccount), balancesOf(accounts, transactions));
+  return snapshotBalancesOf(live(accounts).map(balanceAccount), balancesOf(accounts, transactions, reports));
 }
 
 /** `.` rather than `:`, as everything a function writes must be (#12). */

@@ -116,3 +116,56 @@ test('custom Buy and Sell labels preserve source amounts without standard classi
  assert.ok(txs.every(t=>!t.transfer_id&&!t.hidden));
  for(const tx of txs)assert.equal((await f.engine.source('home',tx.id)).category,categories.find(c=>c.id===tx.category_id).name);
 });
+
+test('parallel import resumes a partial checkpoint, shares taxonomy reads and preserves completed sibling edits after failure', async () => {
+  const f = fixture();
+  const job = await admitted(f, Array.from({length:24}, (_,i)=>source({line:i+2,sourceId:String(i)})));
+  await f.engine.advance(job.id,'home',100);
+  await f.engine.advance(job.id,'home',3);
+  let reads = 0;
+  const store = {...f.store, async read(c,id) {
+    if(c === 'taxonomy') reads++;
+    await new Promise(resolve=>setImmediate(resolve));
+    return f.store.read(c,id);
+  }};
+  f.engine = new MonarchImport(store);
+  let completed = 0;
+  f.fail((c,b)=>c==='import_records' && b.kind==='source' && JSON.parse(b.data).state==='complete' && ++completed===3);
+  await assert.rejects(f.engine.advance(job.id,'home',8), /interrupted/);
+  assert.equal((await f.engine.status(job.id,'home')).processed,3,'an incomplete batch must not advance the saved checkpoint');
+  assert.equal(reads,2,'one category and one tag lookup shared across parallel rows');
+  const complete = [...f.docs.values()].filter(d=>d.body.kind==='source' && JSON.parse(d.body.data).state==='complete').map(d=>JSON.parse(d.body.data));
+  const sibling = complete.find(p=>p.position==='0:4');
+  assert.ok(sibling);
+  const transaction = f.docs.get('transactions/'+sibling.transactionId);
+  await f.store.write('transactions',sibling.transactionId,{...transaction.body,notes:'Preserve my edit'},transaction.revision);
+  f.fail(()=>false);
+  const result = await finish(f,job.id);
+  assert.equal(result.created,24); assert.equal(result.duplicates,0);
+  assert.equal(f.docs.get('transactions/'+sibling.transactionId).body.notes,'Preserve my edit');
+  assert.equal([...f.docs.keys()].filter(key=>key.startsWith('transactions/')).length,24);
+  assert.ok(reads>2,'taxonomy must be rechecked in a later invocation');
+});
+
+test('new imports group categories once and retain custom Buy/Sell classifications', async () => {
+  const f = fixture();
+  const names = ['Groceries', 'Coffee Shops', 'Buy', 'Sell', 'Transfer', 'Paychecks'];
+  const job = await admitted(f, names.map((category, i) => source({ line:i+2, sourceId:String(i), category })), {
+    categories: { Groceries:'expense', 'Coffee Shops':'expense', Buy:'custom', Sell:'custom', Transfer:'transfer', Paychecks:'income' },
+  });
+  await finish(f, job.id);
+  const entries = [...f.docs.values()].filter(doc => doc.body.kind === 'category' || doc.body.kind === 'group').map(doc => doc.body);
+  const groups = entries.filter(entry => entry.kind === 'group');
+  assert.equal(groups.length, 4);
+  for (const category of entries.filter(entry => entry.kind === 'category')) {
+    const group = groups.find(group => group.id === category.parent_id);
+    assert.ok(group, category.name);
+    assert.equal(group.category_kind, category.category_kind);
+    if (['Buy', 'Sell'].includes(category.name)) { assert.equal(category.category_kind, undefined); assert.equal(group.name, 'Custom'); }
+  }
+  const groceries = [...f.docs.values()].find(doc => doc.body.kind === 'category' && doc.body.name === 'Groceries');
+  await f.store.write('taxonomy', groceries.body.id, { ...groceries.body, parent_id: 'user-group' }, groceries.revision);
+  const again = await admitted(f, [source({ sourceId:'new', category:'Groceries', account:'Second checking' })], { categories: { Groceries:'expense' }, accounts: [{ source:'Second checking', accountId:null, name:'Second checking', type:'checking', currency:'USD', identityConfirmed:true, balance:{date:'2026-10-01',amount:'100',sign:1}, opening:'0', replaceOpening:false, expectedRevision:null }] });
+  await finish(f, again.id);
+  assert.equal(f.docs.get('taxonomy/'+groceries.body.id).body.parent_id, 'user-group');
+});

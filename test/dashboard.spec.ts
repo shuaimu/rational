@@ -1,10 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import type { Account, Budget, Goal, TaxonomyEntry, Transaction } from "../src/model/types.js";
+import type { Account, Budget, Goal, NetWorthSnapshot, TaxonomyEntry, Transaction } from "../src/model/types.js";
 import { accountBalances, netWorthIn } from "../src/selectors/balances.js";
 import { budgetMonth, budgetRemaining, previousMonth } from "../src/selectors/budget-month.js";
 import { cashFlowSummary, monthRange, summaryFor } from "../src/selectors/cashflow.js";
 import { formatMinorUnits } from "../src/selectors/money.js";
+import { netWorthChange } from "../src/selectors/history.js";
 import { monthKey } from "../src/selectors/transactions.js";
 
 /**
@@ -20,6 +21,62 @@ import { monthKey } from "../src/selectors/transactions.js";
 const EMAIL = "pat.dashboard@rational.test";
 const PASSWORD = "RationalDemo1!";
 const CURRENCY = "USD";
+
+test("net worth explains partial replication and clears after balances finish syncing", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() => window.rational !== undefined);
+  await page.evaluate(() => {
+    const app = window.rational as unknown as { transport: { fetch: typeof fetch } };
+    const original = app.transport.fetch;
+    let gate = Promise.resolve();
+    const hold = () => {
+      gate = new Promise<void>((resolve) => {
+        Object.assign(window, { releaseBalancePull: resolve });
+      });
+    };
+    hold();
+    Object.assign(window, { holdBalancePull: hold });
+    Object.defineProperty(app.transport, "fetch", {
+      value: async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.includes("/collections/transactions/replication/pull")) await gate;
+        return original(input, init);
+      },
+    });
+  });
+  await page.getByLabel("Email").fill(EMAIL);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Create account" }).click();
+  const status = page.getByTestId("balance-sync-status");
+  await expect(status).toContainText("Refreshing balances… Totals may change.");
+  await expect(status).toContainText("0 transactions loaded on this device");
+  await expect(page.getByTestId("net-worth-figure")).toBeVisible();
+  await page.getByRole("link", { name: "Accounts", exact: true }).click();
+  await expect(status).toContainText("Refreshing balances");
+  await page.evaluate(() => {
+    (window as unknown as { releaseBalancePull: () => void }).releaseBalancePull();
+  });
+  await page.evaluate(() => window.rational.waitForSync());
+  await expect(status).toHaveCount(0);
+  await page.getByRole("link", { name: "Dashboard", exact: true }).click();
+  await expect(status).toHaveCount(0);
+
+  // Offline balances must not look as though a refresh is still progressing.
+  await page.evaluate(() => window.rational.setOnline(false));
+  await expect(status).toContainText("Offline — showing saved balances.");
+  await page.evaluate(() => {
+    (window as unknown as { holdBalancePull: () => void }).holdBalancePull();
+  });
+  await page.evaluate(() => window.rational.setOnline(true));
+  await expect(status).toContainText("Refreshing balances… Totals may change.");
+  await expect(status).toContainText("60 transactions loaded on this device");
+  await page.getByTestId("widget-net-worth").screenshot({ path: ".local/balance-refresh-preview.png" });
+  await page.evaluate(() => {
+    (window as unknown as { releaseBalancePull: () => void }).releaseBalancePull();
+  });
+  await page.evaluate(() => window.rational.waitForSync());
+  await expect(status).toHaveCount(0);
+});
 
 async function signInFresh(page: Page): Promise<void> {
   await page.goto("/");
@@ -48,6 +105,7 @@ interface HouseholdDocuments {
   readonly taxonomy: TaxonomyEntry[];
   readonly budgets: Budget[];
   readonly goals: Goal[];
+  readonly snapshots: NetWorthSnapshot[];
 }
 
 /** The documents the open household holds, as plain objects, for the selectors to read. */
@@ -69,6 +127,7 @@ async function householdDocuments(page: Page): Promise<HouseholdDocuments> {
       taxonomy: await all<TaxonomyEntry>("taxonomy"),
       budgets: await all<Budget>("budgets"),
       goals: await all<Goal>("goals"),
+      snapshots: await all<NetWorthSnapshot>("net_worth_snapshots"),
     };
   });
 }
@@ -77,7 +136,7 @@ test("the dashboard shows the numbers its screens own and leads to them", async 
   await signInFresh(page);
   const today = new Date().toISOString().slice(0, 10);
   const thisMonth = monthKey(today);
-  const { accounts, transactions, taxonomy, budgets, goals } = await householdDocuments(page);
+  const { accounts, transactions, taxonomy, budgets, goals, snapshots } = await householdDocuments(page);
   expect(accounts.length).toBeGreaterThan(0);
   expect(transactions.length).toBeGreaterThan(0);
 
@@ -85,7 +144,10 @@ test("the dashboard shows the numbers its screens own and leads to them", async 
   const balances = accountBalances(accounts, transactions);
   const netWorth = formatMinorUnits(netWorthIn(CURRENCY, accounts, balances).netWorth, CURRENCY);
   await expect(page.getByTestId("net-worth-figure")).toHaveText(netWorth);
-  await expect(page.getByTestId("net-worth-change")).toHaveAttribute("data-direction", /up|down/u);
+  // The fixed demo history can be older than the last 30 days. In that case
+  // a flat trend is correct; time passing must not fail the sync smoke test.
+  const change = netWorthChange(snapshots, CURRENCY, 30, today) ?? 0;
+  await expect(page.getByTestId("net-worth-change")).toHaveAttribute("data-direction", change > 0 ? "up" : change < 0 ? "down" : "flat");
   await expect(
     page.getByTestId("widget-net-worth").getByRole("img", { name: /Net worth over the last/u }),
   ).toBeVisible();

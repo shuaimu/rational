@@ -98,7 +98,8 @@ export function GoalsScreen({
   const [editing, setEditing] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const today = new Date().toISOString().slice(0, 10);
-  const balances = selectAccountBalances(accounts, transactions);
+  const reportedBalances = useQuery(session.collection("account_balance_snapshots")?.find() ?? null);
+  const balances = selectAccountBalances(accounts, transactions, reportedBalances);
   const rows = selectGoalProgress(goals, balances, today);
   const active = rows.filter((row) => row.goal.status === "active");
   const finished = rows.filter((row) => row.goal.status !== "active");

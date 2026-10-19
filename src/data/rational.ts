@@ -20,6 +20,7 @@ import { type HouseholdsClient, HouseholdsError, MakoHouseholdsClient } from "./
 import { MakoPlaidClient, type PlaidClient } from "./plaid.js";
 import { MonarchClient } from "./monarch.js";
 import { Receipts } from "./receipts.js";
+import { ReconnectLoop } from "./reconnect.js";
 import { makoConfigFor } from "./replication.js";
 import { createReplicationStateStore, ScopeStatePersistence } from "./replication-state.js";
 import {
@@ -42,6 +43,7 @@ export interface AppState {
   readonly households: readonly Household[];
   readonly currentHouseholdId: string | null;
   readonly connectivity: Connectivity;
+  readonly reconnectAt: number | null;
   readonly browserOnline: boolean;
   readonly simulatedOnline: boolean;
   readonly authError: string | null;
@@ -93,6 +95,8 @@ export class RationalApp {
   readonly auth: RationalAuth;
   readonly state$: BehaviorSubject<AppState>;
   readonly #now: () => number;
+  readonly #reconnect: ReconnectLoop;
+  #closed = false;
   #directory: Controller<DirectoryCollectionId> | null = null;
   #household: Controller<HouseholdCollectionId> | null = null;
   #writes: HouseholdWrites | null = null;
@@ -143,6 +147,7 @@ export class RationalApp {
       households: [],
       currentHouseholdId: null,
       connectivity: this.transport.online && navigator.onLine ? "online" : "offline",
+      reconnectAt: null,
       browserOnline: navigator.onLine,
       simulatedOnline: this.transport.online,
       authError: null,
@@ -152,6 +157,13 @@ export class RationalApp {
       household: null,
       generation: 0,
     });
+    this.#reconnect = new ReconnectLoop(
+      () => {
+        this.#directory?.reSync();
+        this.#household?.reSync();
+      },
+      (reconnectAt) => this.state$.next({ ...this.state, reconnectAt }),
+    );
   }
 
   get state(): AppState {
@@ -190,15 +202,21 @@ export class RationalApp {
       }));
     const onBrowserOnline = () => {
       onConnectivity();
-      this.#directory?.reSync();
-      this.#household?.reSync();
+      if (this.state.connectivity !== "online") this.#reconnect.retryNow();
+      else {
+        this.#directory?.reSync();
+        this.#household?.reSync();
+      }
     };
+    const onBrowserOffline = () => this.transport.markDisconnected();
     window.addEventListener("online", onBrowserOnline);
-    window.addEventListener("offline", onConnectivity);
+    window.addEventListener("offline", onBrowserOffline);
     const unsubscribeTransport = this.transport.onChange(onConnectivity);
+    if (!navigator.onLine) this.transport.markDisconnected();
+    else onConnectivity();
     this.#removeListeners = () => {
       window.removeEventListener("online", onBrowserOnline);
-      window.removeEventListener("offline", onConnectivity);
+      window.removeEventListener("offline", onBrowserOffline);
       unsubscribeTransport();
     };
     const onSharedSession = (event: StorageEvent) => {
@@ -361,6 +379,7 @@ export class RationalApp {
   }
 
   async signOut(): Promise<void> {
+    this.#patch((state) => ({ ...state, phase: "starting" }));
     await this.#closeHousehold(true);
     await this.#closeDirectory(true);
     try {
@@ -479,7 +498,12 @@ export class RationalApp {
     const role = this.roleIn(this.state.currentHouseholdId);
     if (role !== "owner" && role !== "editor") return;
     this.#seededSessions.add(session);
-    void writes.seedDefaultTaxonomy().catch(() => undefined);
+    void writes.seedDefaultTaxonomy()
+      .then(() => writes.organizeImportedCategories())
+      .catch(() => {
+        // A failed/offline metadata repair is safe to retry on the next scope update.
+        this.#seededSessions.delete(session);
+      });
   }
 
   /**
@@ -667,6 +691,8 @@ export class RationalApp {
   }
 
   async close(): Promise<void> {
+    this.#closed = true;
+    this.#reconnect.stop();
     this.#removeListeners?.();
     await this.#closeHousehold(false);
     await this.#closeDirectory(false);
@@ -822,7 +848,7 @@ export class RationalApp {
    */
   #reconcileSelection(memberships: readonly Membership[]): void {
     const directory = this.#directory;
-    if (directory === null || this.#selecting) return;
+    if (directory === null || this.#selecting || this.state.phase !== "ready") return;
     const ids = memberships.map((membership) => membership.household_id);
     const current = this.state.currentHouseholdId;
     if (current !== null && ids.includes(current)) {
@@ -844,6 +870,7 @@ export class RationalApp {
 
   async #authenticationRequired(): Promise<void> {
     if (this.state.phase !== "ready") return;
+    this.#patch((state) => ({ ...state, phase: "starting" }));
     await this.#closeHousehold(true);
     await this.#closeDirectory(true);
     this.#patch((state) => ({
@@ -886,17 +913,14 @@ export class RationalApp {
 
   #patch(update: (state: AppState) => AppState): void {
     const next = update(this.state$.value);
-    this.state$.next({ ...next, connectivity: this.#connectivityFor(next) });
+    const connectivity = this.#connectivityFor(next);
+    this.state$.next({ ...next, connectivity });
+    if (!this.#closed) this.#reconnect.setDisconnected(connectivity !== "online");
   }
 
   #connectivityFor(state: AppState): Connectivity {
     if (!state.simulatedOnline || !state.browserOnline) return "offline";
-    const scope = state.household ?? state.directory;
-    const lastError = scope?.lastError ?? null;
-    if (lastError !== null && lastError.code === "unavailable" && scope?.activity !== "active") {
-      return "unreachable";
-    }
-    return "online";
+    return this.transport.reachable ? "online" : "unreachable";
   }
 }
 

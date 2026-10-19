@@ -16,7 +16,7 @@ The household app and Investment app share deployment but not ledgers. Raw finan
 **Non-Goals:**
 - Reconstructing unavailable Monarch data, transferring credentials from Monarch, or buying a different Plaid plan.
 - Importing investment trades into Rational Investment, changing its writer environment, or expanding its household access.
-- Reproducing the complete historic net-worth chart in this first change. The optional balance CSV establishes balance evidence for transaction reconciliation; full balance-history migration is a separate capability.
+- Reconstructing historical bank observations that were never supplied. Historical transaction estimates remain explicitly distinct from reported balances.
 - Automatic irreversible erasure of partially imported data. Cancellation stops future processing and reports accepted records.
 
 ## Decisions
@@ -59,11 +59,11 @@ Alternative rejected: a set of date/amount/description keys collapses legitimate
 
 Reuse the existing explicit Plaid account mapping and add a link action on account detail with that account preselected as a candidate. After authorization, require confirmation of returned bank identity; never infer it from name alone.
 
-For each posted provider transaction, first resolve an existing provider-identity mapping. Otherwise find imported candidates only within the mapped account, with exact signed amount and currency. Auto-match only a unique exact posted-date and normalized original-description match. Date-window candidates (up to three days), merchant-only matches and multiple candidates require review. A candidate already claimed by a different provider record is unavailable.
+For each posted provider transaction, first resolve an existing provider-identity mapping. Otherwise find imported candidates only within the mapped account, with exact signed amount and currency. Automatically rank matches within three posting days by normalized original-description evidence, then merchant evidence, date proximity and stable transaction ID. Require exact signed amount and currency. Identical candidates are allocated one-to-one to provider occurrences; a candidate claimed by another provider identity is unavailable. Matching descriptions ignore punctuation and case, but generic words such as payment or transfer alone do not qualify. A bank row with no qualifying unclaimed candidate is created as a separate transaction.
 
-Persist a match intent linking provider identity to the existing transaction before updating it. Replay completes this intent. Keep the transaction ID and imported/user annotations; track provider financial fields separately for subsequent corrections or removals. Persist each provider identity independently, so a replay after a cursor failure cannot duplicate the transaction. Preserve original import provenance when provider corrections are applied and surface conflicts with later manual financial edits.
+Persist a match intent linking provider identity to the existing transaction before updating it. Replay completes this intent. Keep the transaction ID and imported/user annotations; track provider financial fields separately for subsequent corrections or removals. Persist each provider identity independently, so a replay after a cursor failure cannot duplicate the transaction. Preserve original import provenance when provider corrections are applied. Keep later manual financial edits, valid split totals and user deletions as local overrides while recording the newest bank fields privately; these do not create a blocking review task.
 
-Ambiguous provider rows remain durable staged records with a review UI for Merge with existing or Keep as separate. They do not silently enter spending totals. Provider cursors can advance only after staging or ledger effects are durable; unresolved review remains visible independently of cursor completion. A bank-balance adjustment cannot turn unresolved history into a completed migration.
+Every provider row is reconciled automatically; there is no bank-overlap review UI or user decision queue. Provider cursors advance only after durable identity and ledger effects. Existing staged reviews and interrupted intents are drained in bounded cloud sync phases, even when the provider cursor has already passed those rows. Daily sync completes after both provider history and automatic reconciliation finish. Source balance observations are recorded independently of transaction matching, as specified in the later daily-balance revision.
 
 Alternative rejected: a blanket latest-import-date cutoff loses delayed transactions and is unsafe when an export includes future-dated manual entries. Unconditional provider-ID insertion duplicates source history.
 
@@ -76,13 +76,13 @@ Existing-account Plaid mapping is present in the current local UI and cloud depl
 ## Risks / Trade-offs
 
 - CSV account names lack durable identifiers → explicit mapping and collision checks; never conflate same-name accounts.
-- Plaid and Monarch descriptions/dates differ → conservative automatic matching and visible manual review.
+- Plaid and Monarch descriptions/dates differ → amount/currency gates, source and merchant evidence, a three-day posting window and one-to-one claims. Different descriptions remain separate instead of guessing from amount alone.
 - Large CSVs exceed request or execution limits → bounded uploads, indexed page reads, checkpointed phases and scale tests above twenty thousand transactions.
 - Imports stop midway → retain accepted data and durable progress; cancellation is not rollback.
 - Slow hourly continuation → show progress and provide a manual bounded Continue action without adding local workers or changing automatic cadence.
 - Source exports omit data → preview documents omissions and never promises a full Monarch clone.
 - Existing user edits race with the importer → optimistic revisions and revalidation; conflicts require review rather than overwrite.
-- Historical source deletion or provider removal → retain provenance/tombstones and explicit review for conflicting user edits; do not silently resurrect deleted records during retries.
+- Historical source deletion or provider removal → retain provenance/tombstones and preserve conflicting manual edits automatically; do not resurrect user-deleted records during retries.
 
 ## Migration Plan
 
@@ -100,12 +100,32 @@ Existing-account Plaid mapping is present in the current local UI and cloud depl
 
 ### Implementation evidence and continuation behavior
 
-Current public ledger schemas remain unchanged. Private `import_records` holds upload chunks, job checkpoints, account readiness, source metadata, and provider identities; authenticated function routes expose only household-scoped status and review records. No additional RxDB collection or local schema migration is needed.
+At the initial import rollout, public ledger schemas remained unchanged. Private `import_records` holds upload chunks, job checkpoints, account readiness, source metadata, and provider identities; authenticated function routes expose only household-scoped status and review records. That initial import rollout needed no additional RxDB collection or local schema migration; the later daily-balance revision below adds a separate public observation collection.
 
 The existing hourly dispatcher may request an opt-in Mako durable continuation after a successful import phase. This advances admitted history in bounded cloud invocations while the browser is closed; it does not increase the daily bank refresh cadence or add a recurring schedule. Continuations stop when no import phase progressed, when work needs review, or at the platform chain limit, and the hourly dispatcher remains recovery.
 
 The actual transaction export contains only single-tag values. The preview defaults to preserving each tag cell intact and offers explicit comma/semicolon interpretation for reviewed exports; no undocumented delimiter is guessed.
 
+### Bounded import concurrency and measurements
+
+Validation and ledger import process at most eight rows concurrently within the existing invocation deadline. Rows with the same source identity (or legacy occurrence fingerprint) remain ordered. Each batch drains all admitted work before reporting failure or advancing its contiguous checkpoint; replay recognizes completed rows by their original chunk/row position. Account and taxonomy lookups are shared only within a phase, so later phases recheck cloud state. The function itself retains concurrency one and the existing hourly schedule/continuation policy.
+
+Private job records retain phase row counts, elapsed time, database operation counts and aggregate durations, without source values or credentials. Live measurement found per-row network operations dominated runtime; the in-memory scale regression established correctness but did not measure cloud throughput. Individual service mutation responses must explicitly reject revision conflicts rather than count them as applied writes.
+
 ### Custom source categories
 
 The user chose to retain Buy/Sell as custom types. The import manifest accepts `custom`, preserves the exact source category label, and leaves optional public `category_kind` unset instead of assigning expense, income, or transfer. Categories displays this as custom. Amounts, balances, notes, and source provenance remain unchanged. Existing cash-flow behavior for categories without a standard kind continues to follow signed amounts; custom selection does not silently hide rows as transfers. No public schema migration is needed.
+
+### Automatic bank reconciliation revision (2026-10-18)
+
+The user replaced the bank-overlap approval workflow with automatic reconciliation. This supersedes the historical manual bank-review rollout steps above; CSV source-record conflicts remain a separate import concern. Existing review rows are migrated by the normal serverless sync, with no browser worker or schedule-frequency change.
+
+### Reported balances and estimated history (2026-10-18)
+
+Use a separate household-scoped `account_balance_snapshots` collection for daily provider observations, keyed by account and UTC observation date. Store signed minor units, currency, provider, connection identity and observation timestamp. The latest same-day observation replaces that day only; retries do not create duplicate observations or overwrite a newer observation. Application members can read their household; only cloud services write observations. The new collection brings the local model to thirteen open collections without altering or rebuilding existing collection schemas.
+
+Current account totals use the latest reported balance exactly, regardless of transaction import progress or manual financial edits. Accounts without a report retain ledger-derived balances. Keep this single rule in the shared balance engine and use it for account lists, dashboard, goals, export, nightly snapshots and alerts. The independent Investment application remains unchanged.
+
+Cloud sync records current balances for all mapped accounts from its existing accounts response, even while transaction history is incomplete. It no longer writes synthetic bank reconciliation transactions. After saving each authoritative observation, retire only the exact legacy reconciliation record belonging to that account and link, with ownership/marker/revision checks. Provider failures retain the last successful observation and never invent a daily report. The hourly dispatcher and daily provider cadence are unchanged.
+
+For historical dates with a provider report, show that value. Fill other dates from the nearest preceding report plus signed posted transactions since that date; before the first report, subtract subsequent signed transactions from that first report. If no report exists, use the opening balance and transactions. Exclude pending transactions and legacy bank reconciliation adjustments, while retaining transfers, hidden real transactions and manual value updates. Label inferred dates as Estimated and reported dates with provider and observation time. Nightly aggregates are not misrepresented as provider reports. Replication remains asynchronous and shared across tabs.

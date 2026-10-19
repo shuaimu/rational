@@ -196,6 +196,10 @@ test("search and filters narrow the list, the summary describes it, and a reload
   await page.getByLabel("Search transactions").fill("zebra");
   await expect(zebra).toHaveCount(5);
   await expect(page).toHaveURL(/q=zebra/);
+  const filters = page.getByTestId("filters-toggle");
+  await expect(filters).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByLabel("Filter by category")).toHaveCount(0);
+  await filters.click();
   await page
     .getByRole("combobox", { name: "Filter by category" })
     .selectOption({ label: "Shopping" });
@@ -210,6 +214,10 @@ test("search and filters narrow the list, the summary describes it, and a reload
   await expect(zebra).toHaveCount(1);
   await expect(page.getByTestId(`transaction-${kept}`)).toBeVisible();
   await expect(page.getByTestId("transaction-summary")).toHaveText("1 transaction · net -$42.00");
+  await expect(page.getByTestId("active-filter-count")).toHaveText("7 filters");
+
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(filters).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByTestId("active-filter-count")).toHaveText("7 filters");
 
   // Every filter rides in the address.
@@ -271,7 +279,7 @@ test("several transactions get a category, a tag, and a review in one action", a
 
   await page.getByLabel("Search transactions").fill("bulk");
   await expect(page.locator('tr[data-description^="Bulk"]')).toHaveCount(4);
-  await expect(page.getByTestId("marker-needs-review")).toHaveCount(4);
+  await expect(page.getByTestId("marker-needs-review")).toHaveCount(0);
   for (const name of ["Bulk alpha", "Bulk beta", "Bulk gamma"]) {
     await page.getByRole("checkbox", { name: `Select ${name}` }).check();
   }
@@ -293,7 +301,7 @@ test("several transactions get a category, a tag, and a review in one action", a
   const control = page.getByTestId(`transaction-${delta}`);
   await expect(control).not.toContainText("Groceries");
   await expect(control).not.toContainText("vacation");
-  await expect(control.getByTestId("marker-needs-review")).toHaveCount(1);
+  await expect(control.getByTestId("marker-needs-review")).toHaveCount(0);
 
   // The documents say the same as the rows.
   const stored = await storedTransactions(page);
@@ -307,7 +315,7 @@ test("several transactions get a category, a tag, and a review in one action", a
   const untouched = byId.get(delta ?? "");
   expect(untouched?.category_id).toBeUndefined();
   expect(untouched?.tags).toEqual([]);
-  expect(untouched?.reviewed).toBeUndefined();
+  expect(untouched?.reviewed).toBe(false);
 });
 
 test("a transfer is paired from the panel and leaves cash flow", async ({ page }) => {
@@ -401,17 +409,21 @@ test("a transfer is paired from the panel and leaves cash flow", async ({ page }
   ).toHaveCount(0);
 });
 
-test("synced transactions wait in the review queue until someone looks; typed ones never do", async ({
+test("explicit review requests use a quiet view and manual entries start reviewed", async ({
   page,
 }) => {
   await signInFresh(page);
-  const quick = page.getByTestId("needs-review-filter");
-  await expect(quick).toHaveText("Needs review (3)");
-  await quick.click();
+  await seed(page, ["first", "second", "third"].map((name) => ({
+    account_id: "acc_demo_checking", date: "2026-08-03", amount: -100,
+    description: `Review request ${name}`, reviewed: false,
+  })));
+  await page.getByLabel("Search transactions").fill("Review request");
+  const quick = page.getByRole("combobox", { name: "Transaction view" });
+  await quick.selectOption("needs");
   await expect(page).toHaveURL(/review=needs/u);
   const rows = page.locator('tr[data-testid^="transaction-"]');
   await expect(rows).toHaveCount(3);
-  await expect(page.getByTestId("marker-needs-review")).toHaveCount(3);
+  await expect(page.getByTestId("marker-needs-review")).toHaveCount(0);
   await expect(page.getByTestId("transaction-summary")).toContainText("3 transactions");
 
   // Looking at one takes it out of the queue.
@@ -420,16 +432,13 @@ test("synced transactions wait in the review queue until someone looks; typed on
   await first.getByRole("button", { name: "Details" }).click();
   const panel = page.getByTestId("transaction-panel");
   await expect(panel).toHaveAttribute("data-transaction-id", firstId);
-  // The box reflects the stored document, so it flips when the write lands
-  // rather than on the click itself; `click` rather than `check` for that reason.
-  const reviewed = panel.getByLabel("Reviewed", { exact: true });
-  await expect(reviewed).not.toBeChecked();
-  await reviewed.click();
-  await expect(reviewed).toBeChecked();
+  await expect(panel.getByTestId("panel-review-status")).toHaveText("Needs review");
+  await panel.getByRole("button", { name: "Mark as reviewed", exact: true }).click();
+  await expect(panel.getByTestId("panel-review-status")).toHaveText("Reviewed");
   await expect(rows).toHaveCount(2);
-  await expect(quick).toHaveText("Needs review (2)");
   await expect(page.getByTestId(`transaction-${firstId}`)).toHaveCount(0);
   await panel.getByRole("button", { name: "Close" }).click();
+  await expect(quick).toHaveValue("needs");
 
   // Something a member types was looked at by the typing.
   await page.getByRole("button", { name: "New transaction" }).click();
@@ -439,7 +448,7 @@ test("synced transactions wait in the review queue until someone looks; typed on
   await editor.getByLabel("Description").fill("Typed by hand");
   await editor.getByRole("button", { name: "Save transaction" }).click();
   await expect(editor).toHaveCount(0);
-  await expect(quick).toHaveText("Needs review (2)");
+  await expect(quick).toHaveValue("needs");
   await expect(page.locator('tr[data-description="Typed by hand"]')).toHaveCount(0);
 
   await page.getByRole("button", { name: "Clear filters" }).click();

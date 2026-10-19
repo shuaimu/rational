@@ -21,7 +21,7 @@ import {
   SheetTitle,
   cn,
 } from "@mako-cloud/ui";
-import { Paperclip, Trash2 } from "lucide-react";
+import { Check, Paperclip, Trash2 } from "lucide-react";
 import {
   type ChangeEvent,
   type ComponentProps,
@@ -38,8 +38,6 @@ import type { Receipt } from "../data/receipts.js";
 import type { HouseholdWrites } from "../data/writes.js";
 import {
   type Account,
-  isCategory,
-  isGroup,
   isMerchant,
   isTag,
   type Recurrence,
@@ -48,6 +46,8 @@ import {
 } from "../model/types.js";
 import { cleanDescription, merchantResolver } from "../selectors/merchants.js";
 import { amountToText, formatMinorUnits, parseAmount } from "../selectors/money.js";
+import { taxonomyTree } from "../selectors/taxonomy.js";
+import { needsReview } from "../selectors/review.js";
 import { normalizeDescription } from "../selectors/transactions.js";
 import {
   otherLeg,
@@ -235,6 +235,21 @@ export function TransactionPanel({
               )}
             </div>
           )}
+          <div className="flex flex-wrap items-center gap-2" data-testid="panel-review-actions">
+            <span className="mr-auto text-sm text-muted-foreground" data-testid="panel-review-status">
+              {transaction.reviewed === true ? "Reviewed" : needsReview(transaction, taxonomy) ? "Needs review" : "No review requested"}
+            </span>
+            {transaction.reviewed === true ? null : (
+              <Button variant="outline" size="sm" onClick={() => void run((writes) => writes.markReviewed([transaction.id], true))}>
+                <Check aria-hidden="true" /> Mark as reviewed
+              </Button>
+            )}
+            {needsReview(transaction, taxonomy) ? null : (
+              <Button variant="ghost" size="sm" onClick={() => void run((writes) => writes.markReviewed([transaction.id], false))}>
+                Mark as needs review
+              </Button>
+            )}
+          </div>
           {problem === null ? null : (
             <Alert variant="destructive" role="alert" data-testid="panel-error">
               <AlertDescription className="block">{problem}</AlertDescription>
@@ -295,6 +310,7 @@ export function TransactionPanel({
                   <CategoryOptions
                     taxonomy={taxonomy}
                     blankLabel={split ? "split" : "Uncategorized"}
+                    selectedId={transaction.category_id}
                   />
                 </NativeSelect>
               </Field>
@@ -381,19 +397,7 @@ export function TransactionPanel({
             ) : null}
           </PanelSection>
 
-          <PanelSection id="panel-flags-title" title="Review">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="panel-reviewed"
-                checked={transaction.reviewed === true}
-                onCheckedChange={(checked) =>
-                  void run((writes) => writes.markReviewed([transaction.id], checked === true))
-                }
-              />
-              <Label htmlFor="panel-reviewed" className="font-normal">
-                Reviewed
-              </Label>
-            </div>
+          <PanelSection id="panel-flags-title" title="Visibility">
             <div className="flex items-center gap-2">
               <Checkbox
                 id="panel-hidden"
@@ -675,64 +679,26 @@ function CommitField({
  * Shared by the editor, the filters, the bulk bar, and the panel so every
  * picker in the screen reads the same.
  */
-export function CategoryOptions({
-  taxonomy,
-  blankLabel,
-  blankValue = "",
-  extra,
-}: {
+export function CategoryOptions({ taxonomy, blankLabel, blankValue = "", extra, selectedId, includeArchived = false }: {
   taxonomy: readonly TaxonomyEntry[];
   blankLabel: string;
   blankValue?: string;
-  /** Options after the blank and before the groups; the filter's "Uncategorized". */
   extra?: ReadonlyArray<{ readonly value: string; readonly label: string }>;
+  selectedId?: string | undefined;
+  includeArchived?: boolean;
 }) {
-  const byOrder = (left: TaxonomyEntry, right: TaxonomyEntry) =>
-    (left.sort_order ?? Number.MAX_SAFE_INTEGER) - (right.sort_order ?? Number.MAX_SAFE_INTEGER) ||
-    left.name.localeCompare(right.name);
-  const groups = taxonomy.filter(isGroup).sort(byOrder);
-  const categories = taxonomy
-    .filter((entry) => isCategory(entry) && entry.archived !== true)
-    .sort(byOrder);
-  const grouped = new Set<string>();
-  const sections = groups
-    .map((group) => ({
-      group,
-      members: categories.filter((category) => category.parent_id === group.id),
-    }))
-    .filter((section) => section.members.length > 0);
-  for (const section of sections) {
-    for (const member of section.members) grouped.add(member.id);
-  }
-  const loose = categories.filter((category) => !grouped.has(category.id));
-  return (
-    <>
-      <option value={blankValue}>{blankLabel}</option>
-      {(extra ?? []).map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-      {sections.map((section) => (
-        <optgroup key={section.group.id} label={section.group.name}>
-          {section.members.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-      {loose.length === 0 ? null : (
-        <optgroup label={sections.length === 0 ? "Categories" : "Other categories"}>
-          {loose.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name}
-            </option>
-          ))}
-        </optgroup>
-      )}
-    </>
-  );
+  const sections = taxonomyTree(taxonomy).map(section => ({ ...section,
+    categories: section.categories.filter(category => includeArchived || !category.archived || category.id === selectedId),
+  })).filter(section => section.categories.length > 0);
+  return <>
+    <option value={blankValue}>{blankLabel}</option>
+    {(extra ?? []).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+    {sections.map(section => <optgroup key={section.group?.id ?? section.type} label={section.group?.name ?? `Ungrouped (${section.type})`}>
+      {section.categories.map(category => <option key={category.id} value={category.id}>
+        {category.name}{category.archived ? " (archived)" : ""}
+      </option>)}
+    </optgroup>)}
+  </>;
 }
 
 /**

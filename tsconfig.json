@@ -54,6 +54,8 @@
     "mako/collections.json",
     "scripts/*.d.mts",
     "shared/**/*.ts",
-    "functions/shared/monarch.ts"
+    "functions/shared/monarch.ts",
+    "functions/shared/balance-history.ts",
+    "functions/shared/taxonomy.ts"
   ]
 }

@@ -1,7 +1,5 @@
 import {
-  BarChart,
   Button,
-  type ButtonProps,
   Card,
   CardContent,
   CardDescription,
@@ -11,8 +9,6 @@ import {
   DonutChart,
   type DonutSlice,
   EmptyState,
-  Field,
-  Input,
   LineChart,
   Table,
   TableBody,
@@ -27,10 +23,9 @@ import {
   TabsTrigger,
   cn,
 } from "@mako-cloud/ui";
-import { ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { Download } from "lucide-react";
 import {
   type ComponentProps,
-  type FormEvent,
   memo,
   type ReactNode,
   useCallback,
@@ -38,37 +33,37 @@ import {
   useState,
 } from "react";
 
-import { isCounted } from "../../functions/shared/exclusions.js";
 import type { RationalApp } from "../data/rational.js";
 import type { ScopeSession } from "../data/scope.js";
 import { type HouseholdCollectionId, isCategory, isGroup, isMerchant } from "../model/types.js";
 import {
   addMonths,
+  calendarPeriodFor,
+  cashFlowExportTransactions,
   type CashFlowSummary,
-  customRangeKey,
   type DateRange,
-  inRange,
   type MonthFlow,
   monthLabel,
   monthsBetween,
   type RangeKey,
   rangeFor,
   rangeLabel,
-  rangePresets,
   type SpendingContext,
   type SpendingKey,
   type SpendingSlice,
   selectCashFlowSummary,
+  selectComparisonSeries,
   selectCategoryTrend,
   selectMonthlySeries,
   selectSankeyFlows,
-  shiftRange,
   spendingBy,
   summaryFor,
 } from "../selectors/cashflow.js";
 import { csvDocument, transactionsCsv } from "../selectors/export.js";
 import { amountToText, formatMinorUnits } from "../selectors/money.js";
-import { isIsoDate, monthKey, sortTransactions } from "../selectors/transactions.js";
+import { monthKey, sortTransactions } from "../selectors/transactions.js";
+import { CashFlowComparison } from "./cash-flow-comparison.js";
+import { CashFlowPeriodPicker } from "./cash-flow-period-picker.js";
 import { compactMoney, shortMonthLabel } from "./charts/layout.js";
 import { Sankey } from "./charts/sankey.jsx";
 import { Treemap } from "./charts/treemap.jsx";
@@ -114,14 +109,8 @@ const DONUT_SLICES = 7;
  * appearing. Memoised, with props that keep their identity, they redraw only
  * when what they show has changed.
  */
-const StillBarChart = memo(BarChart);
 const StillLineChart = memo(LineChart);
 const StillDonutChart = memo(DonutChart);
-
-const MONTH_SERIES: ReadonlyArray<ChartSeries> = [
-  { key: "income", label: "Income", color: "var(--chart-2)" },
-  { key: "spending", label: "Spending", color: "var(--chart-1)" },
-];
 
 /** A month key on an axis: "Jun", and "Jan 26" where the year turns. */
 function axisMonth(value: string | number): string {
@@ -259,6 +248,10 @@ export function CashFlowScreen({
     ? currency
     : (summaries[0]?.currency ?? currency);
   const summary = summaryFor(summaries, reportCurrency);
+  const comparisonPeriod = calendarPeriodFor(rangeKey) ?? "month";
+  const comparison = selectComparisonSeries(
+    transactions, taxonomy, comparisonPeriod, reportCurrency, today, rangeKey,
+  );
   const months = selectMonthlySeries(transactions, taxonomy, range, reportCurrency);
   const flows = selectSankeyFlows(transactions, taxonomy, taxonomy, range, reportCurrency);
   const context = useMemo<SpendingContext>(
@@ -316,11 +309,8 @@ export function CashFlowScreen({
       : (byCategory.find((slice) => slice.key === trendCategory)?.name ?? trendCategory);
 
   const countedInRange = useMemo(
-    () =>
-      sortTransactions(
-        transactions.filter((entry) => isCounted(entry) && inRange(entry.date, range)),
-      ),
-    [transactions, range],
+    () => sortTransactions(cashFlowExportTransactions(transactions, taxonomy, range)),
+    [transactions, taxonomy, range],
   );
 
   const exportTransactions = (): void => {
@@ -359,15 +349,6 @@ export function CashFlowScreen({
     [reportCurrency],
   );
   // What the charts draw, held steady between renders so they animate once.
-  const monthRows = useMemo(
-    () =>
-      months.map((month) => ({
-        month: month.month,
-        income: month.income,
-        spending: month.spending,
-      })),
-    [months],
-  );
   const trendRows = useMemo(
     () => trend.map((point) => ({ month: point.month, amount: point.amount })),
     [trend],
@@ -409,71 +390,26 @@ export function CashFlowScreen({
         </Button>
       </div>
 
-      <RangeBar
+      <CashFlowPeriodPicker
         rangeKey={rangeKey}
         range={range}
         today={today}
         onChange={(next) => navigate({ range: next })}
       />
 
-      <SummaryTiles summaries={summaries} fallbackCurrency={currency} />
+      <CashFlowComparison
+        key={comparisonPeriod}
+        rows={comparison}
+        period={comparisonPeriod}
+        selected={rangeKey}
+        currency={reportCurrency}
+        onSelect={(next) => navigate({ range: next })}
+      />
 
-      <Card aria-labelledby="months-title">
-        <CardHeader>
-          <CardTitle id="months-title">Income and spending by month</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3">
-          {months.length === 0 ? (
-            <EmptyState title="Nothing counted in this range yet." className="py-6" />
-          ) : (
-            <StillBarChart
-              data={monthRows}
-              x="month"
-              series={MONTH_SERIES}
-              title="Income and spending by month"
-              height={220}
-              formatValue={axisMoney}
-              formatX={axisMonth}
-            />
-          )}
-          {months.length === 0 ? null : (
-            <details className="text-sm">
-              <summary className="cursor-pointer font-medium text-muted-foreground">
-                Month by month
-              </summary>
-              <Table aria-label="Income and spending by month" className="mt-3">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead scope="col">Month</TableHead>
-                    <MoneyHead scope="col">Income</MoneyHead>
-                    <MoneyHead scope="col">Spending</MoneyHead>
-                    <MoneyHead scope="col">Net</MoneyHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {months.map((month) => (
-                    <TableRow key={month.month} data-testid={`month-${month.month}`}>
-                      <RowHead>{monthLabel(month.month)}</RowHead>
-                      <TableCell className="money text-positive" data-testid="income">
-                        {formatMinorUnits(month.income, month.currency)}
-                      </TableCell>
-                      <TableCell className="money" data-testid="spending">
-                        {formatMinorUnits(month.spending, month.currency)}
-                      </TableCell>
-                      <TableCell
-                        className={cn("money", month.net < 0 && "text-destructive")}
-                        data-testid="net"
-                      >
-                        {formatMinorUnits(month.net, month.currency)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </details>
-          )}
-        </CardContent>
-      </Card>
+      <h2 className="text-xl font-semibold" data-testid="selected-period-heading">
+        {rangeLabel(rangeKey)}
+      </h2>
+      <SummaryTiles summaries={summaries} fallbackCurrency={currency} />
 
       {nothingCounted ? null : (
         <Card aria-labelledby="flow-title" data-testid="flow-card">
@@ -642,7 +578,9 @@ export function CashFlowScreen({
       <p className="text-sm text-muted-foreground" data-testid="exclusions-note">
         Transfers between your own accounts, hidden transactions, and balance updates of tracked
         assets are left out of every figure on this page, as they are on the budget and the
-        dashboard. The exports carry the same transactions the page counts.
+        dashboard. Transfer categories, including credit card payments, are excluded even
+        without a linked transfer pair. Buy and Sell are also excluded from income and spending.
+        Cash-flow exports list split portions separately and omit these excluded amounts.
       </p>
     </section>
   );
@@ -675,150 +613,6 @@ function Tile({ label, children }: { label: string; children: ReactNode }) {
         {children}
       </CardContent>
     </Card>
-  );
-}
-
-/** A range preset: a pill that shows which one the page is on. */
-function PresetButton({ pressed, className, ...props }: ButtonProps & { pressed: boolean }) {
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      aria-pressed={pressed}
-      className={cn(
-        "rounded-full",
-        pressed && "border-primary bg-accent text-accent-foreground hover:bg-accent",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
-
-/**
- * The range picker. Presets and the arrows write a key into the address; the
- * custom form writes a `custom:from:to` key, which the arrows cannot step
- * because it has no period to step by.
- */
-function RangeBar({
-  rangeKey,
-  range,
-  today,
-  onChange,
-}: {
-  rangeKey: RangeKey;
-  range: DateRange | null;
-  today: string;
-  onChange: (key: RangeKey) => void;
-}) {
-  const presets = rangePresets(today);
-  const isCustom = rangeKey.startsWith("custom:");
-  const [customOpen, setCustomOpen] = useState(false);
-  const previous = shiftRange(rangeKey, -1);
-  const next = shiftRange(rangeKey, 1);
-  return (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-3" data-testid="range-bar">
-      {/* The two control groups are fieldsets for what they mean, not for how
-          a fieldset looks. */}
-      <fieldset className="m-0 flex min-w-0 items-center gap-1 border-0 p-0">
-        <legend className="sr-only">Period</legend>
-        <Button
-          variant="outline"
-          size="icon-sm"
-          aria-label="Previous period"
-          disabled={previous === rangeKey}
-          onClick={() => onChange(previous)}
-        >
-          <ChevronLeft />
-        </Button>
-        <span
-          className="min-w-[9.5rem] text-center font-semibold tabular-nums"
-          data-testid="range-label"
-        >
-          {rangeLabel(rangeKey)}
-        </span>
-        <Button
-          variant="outline"
-          size="icon-sm"
-          aria-label="Next period"
-          disabled={next === rangeKey}
-          onClick={() => onChange(next)}
-        >
-          <ChevronRight />
-        </Button>
-      </fieldset>
-      <fieldset className="m-0 flex min-w-0 flex-wrap gap-1.5 border-0 p-0">
-        <legend className="sr-only">Range presets</legend>
-        {presets.map((preset) => (
-          <PresetButton
-            key={preset.key}
-            pressed={preset.key === rangeKey}
-            onClick={() => {
-              setCustomOpen(false);
-              onChange(preset.key);
-            }}
-          >
-            {preset.label}
-          </PresetButton>
-        ))}
-        <PresetButton pressed={isCustom || customOpen} onClick={() => setCustomOpen(!customOpen)}>
-          Custom
-        </PresetButton>
-      </fieldset>
-      {isCustom || customOpen ? (
-        <CustomRange key={rangeKey} range={range} today={today} onApply={onChange} />
-      ) : null}
-    </div>
-  );
-}
-
-function CustomRange({
-  range,
-  today,
-  onApply,
-}: {
-  range: DateRange | null;
-  today: string;
-  onApply: (key: RangeKey) => void;
-}) {
-  const [start, setStart] = useState(range?.start ?? `${monthKey(today)}-01`);
-  const [end, setEnd] = useState(range?.end ?? today);
-  const valid = isIsoDate(start) && isIsoDate(end);
-  const submit = (event: FormEvent): void => {
-    event.preventDefault();
-    if (!valid) return;
-    onApply(customRangeKey(start <= end ? { start, end } : { start: end, end: start }));
-  };
-  return (
-    <form
-      className="flex w-full flex-wrap items-end gap-3"
-      aria-label="Custom range"
-      onSubmit={submit}
-    >
-      <Field label="From" htmlFor="range-from">
-        <Input
-          id="range-from"
-          type="date"
-          name="from"
-          className="w-auto"
-          value={start}
-          onChange={(event) => setStart(event.target.value)}
-        />
-      </Field>
-      <Field label="To" htmlFor="range-to">
-        <Input
-          id="range-to"
-          type="date"
-          name="to"
-          className="w-auto"
-          value={end}
-          onChange={(event) => setEnd(event.target.value)}
-        />
-      </Field>
-      <Button type="submit" disabled={!valid}>
-        Apply
-      </Button>
-    </form>
   );
 }
 

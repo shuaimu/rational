@@ -21,6 +21,7 @@ export class Transport {
   readonly #streamAborts = new Set<AbortController>();
   readonly #listeners = new Set<() => void>();
   #online = true;
+  #reachable = true;
   #counters = {
     authRequests: 0,
     refreshes: 0,
@@ -36,10 +37,20 @@ export class Transport {
   constructor(base: typeof globalThis.fetch, online = true) {
     this.#base = base;
     this.#online = online;
+    this.#reachable = online;
   }
 
   get online(): boolean {
     return this.#online;
+  }
+
+  get reachable(): boolean {
+    return this.#reachable;
+  }
+
+  markDisconnected(): void {
+    this.#reachable = false;
+    this.#notify();
   }
 
   counters(): TransportCounters {
@@ -53,7 +64,10 @@ export class Transport {
 
   setOnline(online: boolean): void {
     this.#online = online;
-    if (!online) this.disconnectStreams();
+    if (!online) {
+      this.#reachable = false;
+      this.disconnectStreams();
+    }
     this.#notify();
   }
 
@@ -91,10 +105,14 @@ export class Transport {
       });
       this.#notify();
       try {
-        return await this.#base(input, { ...init, signal: controller.signal });
+        const response = await this.#base(input, { ...init, signal: controller.signal });
+        this.#reachable = response.status < 500;
+        this.#notify();
+        return response;
       } catch (error) {
         this.#streamAborts.delete(controller);
         this.#counters.failedRequests += 1;
+        if (!controller.signal.aborted) this.markDisconnected();
         throw error;
       }
     }
@@ -104,9 +122,11 @@ export class Transport {
       response = await this.#base(input, init);
     } catch (error) {
       this.#counters.failedRequests += 1;
+      if (!init.signal?.aborted) this.#reachable = false;
       this.#notify();
       throw error;
     }
+    this.#reachable = response.status < 500;
     if (url.pathname.endsWith("/replication/push") && response.ok) {
       const body = (await response.clone().json()) as {
         outcomes?: Array<{ status?: string }>;

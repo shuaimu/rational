@@ -49,6 +49,8 @@ interface CartesianChartProps {
   className?: string;
   /** Show the legend even for a single series. */
   legend?: boolean;
+  /** Per-date provenance, shown in the tooltip and accessible data table. */
+  pointLabel?: { key: string; label: string };
 }
 
 const identity = (value: string | number) => String(value);
@@ -104,10 +106,12 @@ function ChartTooltipContent({
   formatValue,
   formatX,
   labels,
+  detail,
 }: TooltipState & {
   formatValue: (value: number) => string;
   formatX: (value: string | number) => string;
   labels: ReadonlyMap<string, string>;
+  detail?: string | undefined;
 }) {
   if (!active || payload === undefined || payload.length === 0) return null;
   const heading =
@@ -115,6 +119,7 @@ function ChartTooltipContent({
   return (
     <div className="min-w-32 rounded-md border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
       {heading !== undefined ? <div className="mb-1 font-medium">{heading}</div> : null}
+      {detail ? <div className="mb-1 text-muted-foreground">{detail}</div> : null}
       <div className="grid gap-1">
         {payload.map((entry) => {
           const key =
@@ -175,6 +180,7 @@ function Frame({
   legendBelow = false,
   table,
   children,
+  interactive = false,
 }: {
   title: string;
   height: number;
@@ -183,11 +189,12 @@ function Frame({
   legendBelow?: boolean;
   table?: ReactNode | undefined;
   children: ReactNode;
+  interactive?: boolean;
 }) {
   return (
     <figure data-slot="chart" className={cn("m-0 grid w-full gap-2", className)}>
       {legendBelow ? null : legend}
-      <div role="img" aria-label={title} style={{ height }} className="relative w-full text-xs">
+      <div role={interactive ? "group" : "img"} aria-label={title} style={{ height }} className="relative w-full text-xs">
         {children}
       </div>
       {legendBelow ? legend : null}
@@ -277,6 +284,7 @@ export function LineChart({
   yAxisWidth = 56,
   className,
   legend,
+  pointLabel,
 }: CartesianChartProps) {
   const animate = useEntryAnimation();
   const labels = labelsOf(series);
@@ -289,8 +297,8 @@ export function LineChart({
       table={
         <DataTable
           caption={title}
-          columns={[x, ...series.map((entry) => entry.label)]}
-          rows={cartesianRows(data, x, series, formatValue, formatX)}
+          columns={[x, ...series.map((entry) => entry.label), ...(pointLabel ? [pointLabel.label] : [])]}
+          rows={cartesianRows(data, x, series, formatValue, formatX).map((row, i) => pointLabel ? [...row, String(data[i]?.[pointLabel.key] ?? "")] : row)}
         />
       }
     >
@@ -325,6 +333,7 @@ export function LineChart({
                 formatValue={formatValue}
                 formatX={formatX}
                 labels={labels}
+                detail={pointLabel ? String(data.find(datum => datum[x] === label)?.[pointLabel.key] ?? "") : undefined}
               />
             )}
           />
@@ -472,7 +481,13 @@ export function BarChart({
   className,
   legend,
   stacked = false,
-}: CartesianChartProps & { stacked?: boolean }) {
+  selectedX,
+  onSelect,
+}: CartesianChartProps & {
+  stacked?: boolean;
+  selectedX?: string;
+  onSelect?: (value: string) => void;
+}) {
   const animate = useEntryAnimation();
   const labels = labelsOf(series);
   return (
@@ -480,6 +495,7 @@ export function BarChart({
       title={title}
       height={height}
       className={className}
+      interactive={onSelect !== undefined}
       legend={legend || series.length > 1 ? <Legend series={series} /> : undefined}
       table={
         <DataTable
@@ -535,7 +551,30 @@ export function BarChart({
               isAnimationActive={animate}
               animationDuration={ENTRY_ANIMATION_MILLISECONDS}
               {...(stacked ? { stackId: "stack" } : {})}
-            />
+            >
+              {onSelect === undefined ? null : data.map((row, rowIndex) => {
+                const value = String(row[x] ?? "");
+                const selected = value === selectedX;
+                return (
+                  <Cell
+                    key={rowIndex}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${formatX(value)} — ${entry.label}: ${formatValue(Number(row[entry.key] ?? 0))}`}
+                    aria-pressed={selected}
+                    fillOpacity={selectedX === undefined || selected ? 1 : 0.35}
+                    className="cursor-pointer outline-none focus-visible:stroke-foreground focus-visible:[stroke-width:2]"
+                    onClick={() => onSelect(value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onSelect(value);
+                      }
+                    }}
+                  />
+                );
+              })}
+            </Bar>
           ))}
         </RechartsBarChart>
       </ResponsiveContainer>

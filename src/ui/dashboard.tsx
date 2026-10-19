@@ -63,9 +63,9 @@ import {
   type ResolvedBill,
   recurrenceName,
 } from "../selectors/recurrences.js";
-import { needsReview } from "../selectors/review.js";
 import { monthKey } from "../selectors/transactions.js";
 import { useQuery } from "./hooks.js";
+import { BalanceSyncStatus } from "./balance-sync-status.js";
 import { routeHash, transactionsHash } from "./router.js";
 
 /**
@@ -334,6 +334,7 @@ function useLayout(): {
 /* --- The screen ---------------------------------------------------------- */
 
 export function DashboardScreen({
+  app,
   session,
   currency,
   household,
@@ -350,6 +351,7 @@ export function DashboardScreen({
   const recurrences = useQuery(session.collection("recurrences")?.find() ?? null);
   const goals = useQuery(session.collection("goals")?.find() ?? null);
   const alerts = useQuery(session.collection("alerts")?.find() ?? null);
+  const reportedBalances = useQuery(session.collection("account_balance_snapshots")?.find() ?? null);
   const snapshots = useQuery(session.collection("net_worth_snapshots")?.find() ?? null);
 
   const today = new Date().toISOString().slice(0, 10);
@@ -369,6 +371,7 @@ export function DashboardScreen({
       goals,
       alerts,
       snapshots,
+      reportedBalances,
       today,
       currency,
       budgetMode,
@@ -382,6 +385,7 @@ export function DashboardScreen({
       goals,
       alerts,
       snapshots,
+      reportedBalances,
       today,
       currency,
       budgetMode,
@@ -407,7 +411,8 @@ export function DashboardScreen({
   const body = (id: WidgetId): ReactNode => {
     switch (id) {
       case "net-worth":
-        return <NetWorthCard summary={summary} history={history} currency={currency} />;
+        return <NetWorthCard summary={summary} history={history} currency={currency}
+          syncStatus={<BalanceSyncStatus app={app} session={session} transactionCount={transactions.length} />} />;
       case "spending":
         return <SpendingCard summary={summary} month={thisMonth} currency={currency} />;
       case "budget":
@@ -716,10 +721,12 @@ function NetWorthCard({
   summary,
   history,
   currency,
+  syncStatus,
 }: {
   summary: DashboardSummary;
   history: ReturnType<typeof selectNetWorthHistoryInRange>;
   currency: string;
+  syncStatus: ReactNode;
 }) {
   const { netWorth, netWorthChange30d } = summary;
   const points = (history?.points ?? []).map((point) => ({
@@ -737,6 +744,7 @@ function NetWorthCard({
       <Figure testId="net-worth-figure" hero>
         {formatMinorUnits(netWorth.netWorth, currency)}
       </Figure>
+      {syncStatus}
       <p className="text-sm">
         {netWorthChange30d === null ? (
           <span className="text-muted-foreground" data-testid="net-worth-change">
@@ -1079,11 +1087,6 @@ function RecentCard({
             </TableCell>
             <TableCell className="w-full max-w-0 truncate font-medium">
               <span data-testid="merchant">{resolveMerchant(transaction).name}</span>
-              {needsReview(transaction) ? (
-                <Badge variant="warning" className="ml-2">
-                  review
-                </Badge>
-              ) : null}
             </TableCell>
             <TableCell className="hidden w-px max-w-48 truncate text-muted-foreground sm:table-cell">
               {categoryLabel(transaction)}

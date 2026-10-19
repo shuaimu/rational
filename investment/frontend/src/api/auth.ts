@@ -16,6 +16,7 @@ let logout: Promise<void> | undefined;
 let transition = Promise.resolve();
 let transitionEpoch = 0;
 let initialization: Promise<void> | undefined;
+let validation: Promise<void> | undefined;
 export const getAuthState = () => state;
 export const subscribeAuth = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
 function update(patch: Partial<AuthState>) { state = { ...state, ...patch }; for (const listener of listeners) listener(); }
@@ -73,18 +74,45 @@ window.addEventListener('storage', (event) => {
   void auth.restoreSession().then(adopt);
 });
 
-export async function validateSession(): Promise<void> {
+// Renewal proves whether the refresh session is still accepted. A rejected
+// access token or an authorization-epoch change alone is not a sign-out.
+export async function renewSession(): Promise<void> {
   try {
-    const token = await auth.validAccessToken();
-    const response = await boundedFetch(`${config.endpoint}/v1/projects/${config.projectId}/environments/${config.environmentId}/auth/user`, { headers: { Authorization: `Bearer ${token}`, 'X-Mako-Key': config.publicProjectKey } });
-    if ([401, 403].includes(response.status)) { console.warn('Investment session reset', { source: 'user-validation', status: response.status }); await signOut(); return; }
+    const session = await auth.refreshSession();
+    await adopt(session);
+  } catch (error) {
+    if (auth.authenticationRequired) await adopt(null);
+    throw error;
+  }
+}
+
+export function validateSession(): Promise<void> {
+  validation ??= validateCurrentSession().finally(() => { validation = undefined; });
+  return validation;
+}
+async function validateCurrentSession(): Promise<void> {
+  try {
+    const readUser = async () => {
+      const token = await auth.validAccessToken();
+      const response = await boundedFetch(`${config.endpoint}/v1/projects/${config.projectId}/environments/${config.environmentId}/auth/user`, { headers: { Authorization: `Bearer ${token}`, 'X-Mako-Key': config.publicProjectKey } });
+      return { token, response };
+    };
+    let result = await readUser();
+    if ([401, 403].includes(result.response.status)) {
+      // A sleeping tab can resume with an expired token; another tab may also
+      // have rotated it while this request was in flight.
+      if (auth.accessToken() === result.token) await renewSession();
+      result = await readUser();
+    }
+    if (auth.accessToken() !== result.token) return;
+    const { response } = result;
     if (!response.ok) { update({ offline: true }); return; }
     const user = await response.json();
-    if (user.status !== 'active') { console.warn('Investment session reset', { source: 'inactive-user' }); await signOut(); return; }
+    if (user.status !== 'active') { await renewSession(); return; }
     if (user.id !== config.ownerId) { await adopt(auth.currentSession()); return; }
     update({ offline: false });
   } catch (error) {
-    if (error instanceof MakoAuthError && !error.retryable && auth.authenticationRequired) await signOut();
+    if (error instanceof MakoAuthError && !error.retryable && auth.authenticationRequired) await adopt(null);
     else update({ offline: true });
   }
 }
@@ -93,7 +121,7 @@ export function initializeAuth(): Promise<void> {
     const session = await auth.restoreSession();
     await adopt(session);
     if (session) void validateSession();
-  })().catch(async () => { await signOut(); });
+  })().catch(() => update({ status: 'error', error: 'Local sign-in could not be restored. Reload to retry.' }));
   return initialization;
 }
 export async function signIn(email: string, password: string): Promise<void> {

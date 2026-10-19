@@ -151,14 +151,14 @@ test("deleting a category moves its transactions and removes its budgets", async
     await form.getByLabel("Group").selectOption({ label: "Travel & Lifestyle" });
     await form.getByLabel("Icon").fill(icon ?? "");
     await form.getByRole("button", { name: "Add category" }).click();
-    await expect(page.locator(`tr[data-name="${name}"]`)).toBeVisible();
-    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.locator(`[data-testid^="category-"][data-name="${name}"]`)).toBeVisible();
+    await expect(form).toHaveCount(0);
   }
   const travel = page.getByTestId(`group-grp_${hh}.travel_and_lifestyle`);
-  await expect(travel.locator('tr[data-name="Board games"]')).toContainText("🎲");
+  await expect(travel.locator('[data-name="Board games"]')).toContainText("🎲");
   const idOf = (name: string) =>
     page
-      .locator(`tr[data-name="${name}"]`)
+      .locator(`[data-testid^="category-"][data-name="${name}"]`)
       .evaluate((element) => (element as HTMLElement).dataset.testid?.replace("category-", ""));
   const boardGames = (await idOf("Board games")) ?? "";
   const puzzles = (await idOf("Puzzles")) ?? "";
@@ -211,10 +211,8 @@ test("deleting a category moves its transactions and removes its budgets", async
   );
 
   // Delete, choosing where the transactions go.
-  await travel
-    .locator('tr[data-name="Board games"]')
-    .getByRole("button", { name: "Delete" })
-    .click();
+  await travel.locator('[data-name="Board games"]').getByRole("button", { name: "Actions for Board games" }).click();
+  await page.getByRole("menuitem", { name: "Delete category…" }).click();
   const dialog = page.getByRole("dialog", { name: "Delete Board games" });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel("Move its transactions to").selectOption({
@@ -226,8 +224,8 @@ test("deleting a category moves its transactions and removes its budgets", async
   await expect(status).toContainText("Deleted Board games");
   await expect(status).toContainText("2 transactions moved to Puzzles");
   await expect(status).toContainText("1 budget removed");
-  await expect(page.locator('tr[data-name="Board games"]')).toHaveCount(0);
-  await expect(travel.locator('tr[data-name="Puzzles"]')).toBeVisible();
+  await expect(page.locator('[data-testid^="category-"][data-name="Board games"]')).toHaveCount(0);
+  await expect(travel.locator('[data-name="Puzzles"]')).toBeVisible();
 
   // Every transaction and split names Puzzles; the budget is gone.
   const after = await page.evaluate(
@@ -456,4 +454,101 @@ test("rules apply in their listed order, and a rule sets the merchant and review
   await expect(uber.getByTestId("match-count")).toHaveText("0");
   await uber.getByRole("button", { name: "Delete" }).click();
   await expect(uber).toHaveCount(0);
+});
+
+test("groups can be created and categories moved without changing ledger assignments", async ({ page }) => {
+  await signUp(page, "fresh.groups@rational.test", { fresh: true });
+  const hh = await page.evaluate(() => window.rational.state.currentHouseholdId);
+  await page.goto("/#/settings/categories");
+  await expect(page.getByTestId(`category-cat_${hh}.groceries`)).toBeVisible();
+  await page.getByRole("button", { name: "New group", exact: true }).click();
+  const groupForm = page.getByRole("form", { name: "New group" });
+  await groupForm.getByLabel("Name").fill("Everyday essentials");
+  await groupForm.getByRole("button", { name: "Save group" }).click();
+  const groceries = page.getByTestId(`category-cat_${hh}.groceries`);
+  await groceries.getByRole("button", { name: "Groceries", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "Edit category" });
+  await expect(editor.getByLabel("Group").locator('option').filter({ hasText: /^Income$/ })).toHaveCount(0);
+  await editor.getByLabel("Group").selectOption({ label: "Everyday essentials" });
+  await editor.getByRole("button", { name: "Save category" }).click();
+  const group = page.locator('[data-testid^="group-"][data-name="Everyday essentials"]');
+  await expect(group.getByTestId(`category-cat_${hh}.groceries`)).toBeVisible();
+  await group.getByRole("button", { name: "Collapse Everyday essentials" }).click();
+  await expect(groceries).toHaveCount(0);
+  await page.getByLabel("Search categories and groups").fill("grocer");
+  await expect(groceries).toBeVisible();
+  await groceries.getByRole("button", { name: "Actions for Groceries" }).click();
+  await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
+  await expect(groceries).toHaveCount(0);
+  await page.getByLabel("Show archived").check();
+  await expect(groceries).toContainText("Archived");
+  await groceries.getByRole("button", { name: "Actions for Groceries" }).click();
+  await page.getByRole("menuitem", { name: "Restore", exact: true }).click();
+  await expect(groceries).not.toContainText("Archived");
+  const invalid = await page.evaluate(async hh => {
+    const writes = window.rational.writes!;
+    try { await writes.updateCategory(`cat_${hh}.groceries`, { category_kind: "income" }); return "accepted"; }
+    catch (error) { return String(error); }
+  }, hh);
+  expect(invalid).toContain("group of expense");
+});
+
+test("import repair preserves references, skips used starter categories and persists custom groups", async ({ page }) => {
+  await signUp(page, "fresh.repair@rational.test", { fresh: true });
+  const result = await page.evaluate(async () => {
+    const writes = window.rational.writes!;
+    const hh = window.rational.state.currentHouseholdId!;
+    await writes.seedDefaultTaxonomy();
+    const taxonomy = window.rational.household!.session!.collections.taxonomy!;
+    const base = { household_id: hh, created_at: 1, updated_at: 1 };
+    await taxonomy.bulkInsert([
+      { ...base, id: "tax_m_groceries", kind: "category", name: "Groceries", category_kind: "expense" },
+      { ...base, id: "tax_m_rent", kind: "category", name: "Rent", category_kind: "expense" },
+      { ...base, id: "tax_m_buy", kind: "category", name: "Buy" },
+    ]);
+    const account = await writes.createAccount({ name: "Test", type: "checking", currency: "USD", opening_balance: 0, opening_date: "2026-01-01" });
+    const tx = await writes.createTransaction({ account_id: account.id, date: "2026-10-01", amount: -100, currency: "USD", description: "Food", category_id: "tax_m_groceries" });
+    await writes.createRule({ name: "Keep starter", match: { description_contains: "Rent" }, set_category_id: `cat_${hh}.rent`, priority: 10 });
+    await writes.organizeImportedCategories();
+    const first = (await taxonomy.find().exec()).map(doc => doc.toJSON());
+    const repeat = await writes.organizeImportedCategories();
+    const currentTx = (await window.rational.household!.session!.collections.transactions!.findOne(tx.id).exec())!.toJSON();
+    return { hh, first, repeat, categoryId: currentTx.category_id };
+  });
+  expect(result.repeat).toBe(0);
+  expect(result.categoryId).toBe("tax_m_groceries");
+  expect(result.first.find(entry => entry.id === `cat_${result.hh}.groceries`)?.archived).toBe(true);
+  expect(result.first.find(entry => entry.id === `cat_${result.hh}.rent`)?.archived).not.toBe(true);
+  expect(result.first.find(entry => entry.id === "tax_m_buy")?.category_kind).toBeUndefined();
+  await page.goto("/#/settings/categories");
+  await expect(page.getByTestId(`group-grp_${result.hh}.custom`).getByTestId("category-tax_m_buy")).toBeVisible();
+  await expect(page.getByTestId(`group-grp_${result.hh}.food_and_dining`).getByTestId("category-tax_m_groceries")).toBeVisible();
+  await page.goto("/#/transactions");
+  await page.getByRole("button", { name: "Filters", exact: true }).click();
+  await page.getByLabel("Filter by group").selectOption({ label: "Food & Dining" });
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.getByRole("table", { name: "Transactions", exact: true })).toContainText("Food");
+});
+
+test("archived categories stay selected on existing transactions and available in history filters", async ({ page }) => {
+  await signUp(page, "archive.picker@rational.test", { fresh: false });
+  const categoryId = await page.evaluate(async () => {
+    const writes = window.rational.writes!;
+    const category = await writes.createCategory("Archived category", "expense");
+    await writes.createTransaction({ account_id: "acc_demo_checking", date: "2026-10-01", amount: -123, currency: "USD", description: "Archived history example", category_id: category.id });
+    await writes.updateCategory(category.id, { archived: true });
+    return category.id;
+  });
+  await page.goto("/#/transactions");
+  await page.locator('tr[data-description="Archived history example"]').getByRole("button", { name: "Edit", exact: true }).click();
+  const editor = page.getByRole("form", { name: "Transaction editor" });
+  await expect(editor.getByLabel("Category", { exact: true })).toHaveValue(categoryId);
+  await expect(editor.getByLabel("Category", { exact: true }).locator("option:checked")).toHaveText("Archived category (archived)");
+  await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Filters", exact: true }).click();
+  await page.getByLabel("Filter by category").selectOption(categoryId);
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.getByTestId("transaction-summary")).toContainText("1 transaction");
+  await page.getByRole("button", { name: "New transaction", exact: true }).click();
+  await expect(editor.getByLabel("Category", { exact: true }).locator(`option[value="${categoryId}"]`)).toHaveCount(0);
 });

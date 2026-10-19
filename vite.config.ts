@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, type ProxyOptions } from "vite";
+import { defineConfig } from "vite";
 import { investmentDev } from "./scripts/investment-dev";
 
 /**
@@ -20,11 +20,9 @@ import { investmentDev } from "./scripts/investment-dev";
  * has to be under it. The dev server and the browser suite stay at `/`, where
  * the copied Playwright configuration expects them.
  *
- * The data plane sends no CORS headers, so in development the dev server
- * proxies `/v1` (and the function route) to the configured endpoint and the
- * app calls same-origin -- the topology a deployment has behind its reverse
- * proxy. A deployed site calls the endpoint cross-origin instead, which is
- * what `mako allowed-origins set --origin` allows.
+ * Both development and production call Mako's HTTPS endpoints directly.
+ * Vite serves assets and HMR only. The environment's allowed-origin list
+ * permits the local website, and HTTP/2 multiplexes live streams with API calls.
  */
 interface RationalConfigFile {
   readonly endpoint: string;
@@ -68,34 +66,13 @@ export default defineConfig(({ command }) => {
       ? null
       : {
           ...configFile,
-          endpoint: command === "serve" ? "same-origin" : configFile.endpoint,
-          functionsEndpoint:
-            command === "serve" && functionsEndpoint !== undefined
-              ? "same-origin"
-              : (configFile.functionsEndpoint ?? null),
+          endpoint: liveEndpoint ?? configFile.endpoint,
+          functionsEndpoint: functionsEndpoint ?? null,
         };
-  const proxy: Record<string, ProxyOptions> = {};
-  if (liveEndpoint !== undefined) {
-    proxy["/v1"] = {
-      target: liveEndpoint,
-      changeOrigin: true,
-      configure: (server) => {
-        server.on("proxyRes", (proxyRes) => {
-          // The live pull stream is server-sent events; never buffer it.
-          if (proxyRes.headers["content-type"]?.includes("text/event-stream")) {
-            proxyRes.headers["cache-control"] = "no-cache";
-          }
-        });
-      },
-    };
-  }
-  if (functionsEndpoint !== undefined && functionsEndpoint !== null) {
-    proxy["^/[^/]+--[^/]+/functions/v1/"] = {
-      target: functionsEndpoint,
-      changeOrigin: true,
-    };
-  }
   return {
+    // Browser tests compile a different environment. Keep their optimizer
+    // output separate so they cannot replace the running dev server's chunks.
+    cacheDir: process.env.RATIONAL_CONFIG === "example" ? "node_modules/.vite-test" : "node_modules/.vite",
     base: command === "build" ? "/rational/" : "/",
     plugins: [investmentDev(), command === "serve" && react(), tailwindcss()],
     // The design system travels with this repository as sources under
@@ -144,7 +121,7 @@ export default defineConfig(({ command }) => {
       },
     },
     server: {
-      port: 5173, strictPort: true, proxy,
+      port: 5173, strictPort: true,
       // Deployment journals and build output must not interrupt an in-progress
       // bank login. Private deployment inputs are never web assets.
       watch: { ignored: ["**/.local/**", "**/dist/**", "**/web-dist/**", "**/test-results/**", "**/playwright-report/**"] },

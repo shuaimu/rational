@@ -256,7 +256,7 @@ test("and those numbers are the right ones", () => {
     summary.goals.map((row) => row.goal.id),
     ["g1", "g2", "g3"],
   );
-  assert.equal(summary.reviewCount, 1);
+  assert.equal(summary.reviewCount, 0, "categorized bank arrivals do not need automatic review");
   assert.equal(summary.unreadAlerts, 1);
   assert.deepEqual(
     summary.recentTransactions.map((entry) => entry.id),

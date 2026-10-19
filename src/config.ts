@@ -39,6 +39,8 @@ export interface RationalConfig {
   readonly retryTimeMs: number;
   /** Start with the simulated network switched off (offline restart tests). */
   readonly startOffline: boolean;
+  /** Optional polling-only mode for tests or endpoints without streaming support. */
+  readonly liveStreams?: boolean;
 }
 
 export interface RationalOverrides {
@@ -51,6 +53,7 @@ export interface RationalOverrides {
   readonly signIn?: SignInSettings;
   readonly retryTimeMs?: number;
   readonly startOffline?: boolean;
+  readonly liveStreams?: boolean;
 }
 
 declare global {
@@ -127,6 +130,7 @@ export function resolveConfig(overrides: RationalOverrides | undefined): Rationa
           signIn: tenant.signIn ?? DEFAULT_SIGN_IN,
           retryTimeMs: 2_000,
           startOffline: false,
+          liveStreams: tenant.liveStreams ?? true,
         };
   const merged = { ...base, ...stripUndefined(overrides ?? {}) };
   return {

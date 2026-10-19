@@ -19,7 +19,8 @@ import {
   cn,
 } from "@mako-cloud/ui";
 import { ChevronLeft } from "lucide-react";
-import { type FormEvent, useId, useMemo, useState, useEffect } from "react";
+import { useCloudImports } from "./cloud-imports.js";
+import { type FormEvent, useId, useMemo, useState } from "react";
 
 import type { RationalApp } from "../data/rational.js";
 import type { ScopeSession } from "../data/scope.js";
@@ -33,7 +34,10 @@ import {
   TRACKED_TYPES,
   type Transaction,
 } from "../model/types.js";
+import { dailyBalanceHistory, type HistoricalBalance } from "../../functions/shared/balance-history.js";
+import { isBankReconciliation, latestReportedBalance } from "../../functions/shared/balances.js";
 import { accountBalance, holdingsValue } from "../selectors/balances.js";
+import { accountImportStatus } from "../selectors/account-import.js";
 import {
   type HistoryRangeKey,
   historyRange,
@@ -91,6 +95,7 @@ export function AccountScreen({
   const transactions = useQuery(
     session.collection("transactions")?.find({ selector: { account_id: accountId } }) ?? null,
   );
+  const reportedBalances = useQuery(session.collection("account_balance_snapshots")?.find() ?? null);
   const snapshots = useQuery(session.collection("net_worth_snapshots")?.find() ?? null);
   const taxonomy = useQuery(session.collection("taxonomy")?.find() ?? null);
   const connections = useQuery(
@@ -100,16 +105,21 @@ export function AccountScreen({
   const [rangeKey, setRangeKey] = useState<HistoryRangeKey>("3M");
   const today = todayIso();
   const range = useMemo(() => historyRange(rangeKey, today), [rangeKey, today]);
-  const history = selectAccountBalanceHistory(snapshots, accountId, range);
-  const sorted = useMemo(() => sortTransactions(transactions), [transactions]);
+  const reportedBalance = account ? latestReportedBalance(account, reportedBalances) : undefined;
+  const historicalEstimates = account && !HOLDING_TYPES.includes(account.type) && !TRACKED_TYPES.includes(account.type);
+  const history = useMemo<readonly HistoricalBalance[]>(() => account && historicalEstimates
+    ? dailyBalanceHistory(account, transactions, reportedBalances, range?.end ?? today, range?.start)
+    : selectAccountBalanceHistory(snapshots, accountId, range).map(point => ({ ...point, estimated: false })),
+  [account, historicalEstimates, transactions, reportedBalances, today, snapshots, accountId, range]);
+  const sorted = useMemo(() => sortTransactions(transactions.filter(tx => !isBankReconciliation(tx))), [transactions]);
   const resolveMerchant = useMemo(() => merchantResolver(taxonomy), [taxonomy]);
   const categoryNames = useMemo(
     () => new Map(taxonomy.filter(isCategory).map((category) => [category.id, category.name])),
     [taxonomy],
   );
   const balance = useMemo(
-    () => (account === undefined ? 0 : accountBalance(account, transactions)),
-    [account, transactions],
+    () => (account === undefined ? 0 : accountBalance(account, transactions, reportedBalances)),
+    [account, transactions, reportedBalances],
   );
   const holdingRows = useMemo<readonly HoldingRow[]>(
     () =>
@@ -123,14 +133,8 @@ export function AccountScreen({
           })),
     [account],
   );
-  const [importReady, setImportReady] = useState(false);
-  const [importStatus, setImportStatus] = useState("Checking import readiness…");
-  useEffect(() => {
-    let active = true;
-    const hh = app.state.currentHouseholdId;
-    if (app.monarch && hh) void app.monarch.call<{ready:boolean;verified:boolean|null}>("account-status", hh, { accountId }).then(status => { if(active) { setImportReady(true); setImportStatus(status.verified === false ? "History imported · balance unverified · ready for bank linking" : "Ready for bank linking"); } }).catch(error => { if(active) { setImportReady(false); setImportStatus(error instanceof Error ? error.message : "Import status unavailable"); } });
-    return () => { active = false; };
-  }, [app, accountId]);
+  const { jobs: cloudImports } = useCloudImports();
+  const importStatus = accountImportStatus(cloudImports, accountId);
   const [panel, setPanel] = useState<"edit" | "value" | "holding" | null>(null);
   const [editingHolding, setEditingHolding] = useState<HoldingRow | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -183,7 +187,7 @@ export function AccountScreen({
 
   return (
     <section aria-labelledby="account-title" data-testid="account-screen" className="grid gap-6">
-      {app.config.mode === "live" ? <p role="status" className="text-sm">{importStatus}</p> : null}
+      {app.config.mode === "live" && importStatus.message ? <p role="status" className="text-sm">{importStatus.message}</p> : null}
       <div className="grid gap-3">
         <Breadcrumb />
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -217,7 +221,7 @@ export function AccountScreen({
           </div>
           {canEdit ? (
             <div className="flex flex-wrap items-center justify-end gap-2">
-              {!closed && app.config.mode === "live" ? <Button variant="outline" disabled={!importReady} title={importStatus} onClick={() => { window.location.hash = `${routeHash({ name:"settings", page:"connections" })}?account=${encodeURIComponent(account.id)}`; }}>Link bank</Button> : null}
+              {!closed && app.config.mode === "live" ? <Button variant="outline" disabled={importStatus.blocked} title={importStatus.message || undefined} onClick={() => { window.location.hash = `${routeHash({ name:"settings", page:"connections" })}?account=${encodeURIComponent(account.id)}`; }}>Link bank</Button> : null}
               <Button variant="outline" onClick={() => setPanel("edit")}>
                 Edit
               </Button>
@@ -267,9 +271,11 @@ export function AccountScreen({
           value={formatMinorUnits(balance, account.currency)}
           valueTestId="balance"
           note={
-            tracked
+            reportedBalance
+              ? `Reported by ${reportedBalance.source === "plaid" ? "Plaid" : "Monarch"} · ${new Date(reportedBalance.observed_at).toLocaleString()}`
+              : tracked
               ? "Tracked value, updated in place"
-              : `Opened ${account.opening_date} at ${formatMinorUnits(
+              : `Estimated from transactions · opened ${account.opening_date} at ${formatMinorUnits(
                   account.opening_balance,
                   account.currency,
                 )}`
@@ -327,18 +333,25 @@ export function AccountScreen({
         <CardContent>
           {history.length === 0 ? (
             <p className="m-0 text-sm text-muted-foreground" data-testid="balance-history-empty">
-              No snapshots for this account in this range. The nightly job records one a night, so
-              the chart fills in from tomorrow.
+              No balance history is available for this account in this range.
             </p>
           ) : (
             <div className="grid gap-2" data-testid="balance-history">
+              {historicalEstimates ? <p className="m-0 text-sm text-muted-foreground" data-testid="balance-history-source">
+                Reported balances use the bank’s daily observations. Dates without a report are estimated from transactions; hover over a date to see its source.
+              </p> : null}
               <LineChart
-                data={history.map((point) => ({ date: point.date, balance: point.balance }))}
+                data={history.map((point) => ({ date: point.date, balance: point.balance,
+                  basis: point.estimated ? "Estimated from transactions" : point.source
+                    ? `Reported by ${point.source === "plaid" ? "Plaid" : "Monarch"}${point.observedAt ? ` · ${new Date(point.observedAt).toLocaleString()}` : ""}` : "Recorded balance",
+                }))}
                 x="date"
                 series={[{ key: "balance", label: "Balance" }]}
+                pointLabel={{ key: "basis", label: "Balance source" }}
                 title={`Balance of ${account.name} over time`}
                 height={200}
-                formatValue={(value) => compactMoney(value, account.currency)}
+                formatValue={(value) => formatMinorUnits(value, account.currency)}
+                formatTick={(value) => compactMoney(value, account.currency)}
                 formatX={shortDate}
               />
               <p
@@ -489,7 +502,7 @@ function balanceCaption(
   if (first === undefined || last === undefined) return "";
   if (history.length === 1) return `One snapshot, ${formatMinorUnits(first.balance, currency)}.`;
   const change = last.balance - first.balance;
-  return `${history.length} snapshots, ${first.date} to ${last.date}: ${
+  return `${history.length} daily balances, ${first.date} to ${last.date}: ${
     change >= 0 ? "up" : "down"
   } ${formatMinorUnits(Math.abs(change), currency)}.`;
 }

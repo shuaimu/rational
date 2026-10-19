@@ -25,6 +25,15 @@ deploy to Mako Cloud. Everything a server would normally do is done by one of tw
   a bank connection, a nightly pass over categorisation rules — belongs in the
   same place.
 
+Household categories are organized by financial type, group, then category. Manage them
+in Settings → Categories, including search, collapsing groups, moving categories,
+and archiving. Group changes flow through local transaction filters, budgets and
+cash-flow reports without rewriting transactions. Monarch CSVs do not include group
+metadata: standard category names receive suggested groups, unmatched expenses use
+Other, and preserved custom types use Custom. After the initial replica completes,
+older imported categories receive these groups; untouched, unused starter duplicates
+are archived and can be restored. Imported names, IDs and financial types stay intact.
+
 Application behavior is maintained in this repository. Platform defects and SDK
 changes are reviewed separately in Mako Cloud repositories.
 
@@ -79,6 +88,17 @@ preview, register `http://localhost:5173/rational/`; allowing
 URL (`https://shuaimu.github.io/rational/`) and existing provider settings when
 adding a development URL with `mako-cloud auth-settings get` and `set`.
 
+Rational shares a durable browser session with Investment. The cloud environment
+uses `persistentSessions: true`: sign-in has no fixed expiry, while short-lived
+access tokens renew automatically. Sign-out, browser-data removal, and explicit
+access revocation still end the session. Authorization changes refresh the session
+and rebuild affected local caches instead of signing out both apps.
+Renewals save a random request identity before calling the cloud. If a response
+is lost or the device sleeps, the same renewal can recover its replacement token
+after reopening. This requires the cloud's idempotent refresh support; unrelated
+token reuse and explicit revocation still terminate the session.
+
+
 Create the project, its collections, policies, indexes, and bucket, and deploy
 the `households` function with:
 
@@ -90,6 +110,20 @@ npm run seed          # ~200 demo transactions, as a signed-in user
 `scripts/bootstrap.mjs` drives the `mako` CLI (install it, or point at one with
 `--cli`), and is idempotent: rerunning reuses whatever it finds. It writes
 `rational.config.json` for you.
+
+Linked household accounts use the latest provider-reported balance. Daily
+observations live in `account_balance_snapshots`, separately from transactions;
+bank synchronization does not create balance-reconciliation transactions.
+Account history uses reported values where available and estimates other dates
+from posted transactions, anchored to a reported balance (or the opening balance
+when no report exists). Hover over a chart date to see its source. A failed bank
+refresh retains the previous reported balance and its timestamp.
+
+For an existing environment, `node scripts/deploy-balances.mjs` provisions the
+household-read-only observation collection and its scoped cloud credential, then
+deploys `institution-sync` and `nightly` while preserving their limits and schedules.
+It accepts either function name to resume a partial deployment. Provider refresh
+remains daily with hourly dispatch; this command does not publish the frontend.
 
 ## Building and testing
 
@@ -145,6 +179,17 @@ support hot reload through the same server. The compatibility command
 `npm run dev:investment` (or `npm run dev` inside `investment/frontend`) starts
 that same server; run only one of these commands. All API and scheduled sync work
 runs in Mako Cloud. Production remains a static site.
+
+Development and production call Mako's HTTPS API directly; Vite serves only
+static assets and hot reload. Include `http://localhost:5173` (and
+`http://127.0.0.1:5173` if used) in the environment's allowed origins.
+
+Tabs on the same origin share IndexedDB. RxDB elects one sync leader per
+protected data scope; follower tabs react to shared local changes and send no
+replication requests. Leadership transfers automatically when a tab closes.
+Rational uses one grouped live stream for the user directory and one for the
+selected household, shared across tabs. Investment has its own protected
+scope. Sync status and replica resets are coordinated across tabs as well.
 
 No local backend is required. Credentials, financial exports, and runtime state
 must never be committed. See `openspec/changes/integrate-rational-investment/`

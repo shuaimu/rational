@@ -24,9 +24,11 @@ import {
   Target,
   TrendingUp,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import type { AppState, RationalApp } from "../data/rational.js";
+import { reconnectMessage } from "../data/reconnect.js";
+import { CloudImportBanner, CloudImportsProvider } from "./cloud-imports.js";
 import { firedAlertHistory, unreadCount } from "../selectors/alerts.js";
 import { useQuery } from "./hooks.js";
 import { type Route, routeHash } from "./router.js";
@@ -60,7 +62,22 @@ function sectionOf(route: Route): Route["name"] {
 /** The per-device theme preference lives under this key, as it always has. */
 export const THEME_KEY = "rational.theme";
 
-export function Shell({
+export function Shell(props: {
+  app: RationalApp;
+  state: AppState;
+  route: Route;
+  children: ReactNode;
+}) {
+  return (
+    <CloudImportsProvider key={props.state.currentHouseholdId ?? "none"}
+      client={props.app.monarch} householdId={props.state.currentHouseholdId}
+      online={props.state.connectivity === "online"}>
+      <ShellContent {...props} />
+    </CloudImportsProvider>
+  );
+}
+
+function ShellContent({
   app,
   state,
   route,
@@ -74,7 +91,9 @@ export function Shell({
   const household = state.household;
   const offline = state.connectivity !== "online";
   const pending = household?.pendingWrites ?? 0;
-  const syncError = household?.lastError ?? state.directory?.lastError;
+  const lastError = household?.lastError ?? state.directory?.lastError;
+  // Connectivity owns transient network failures; keep other sync refusals visible.
+  const syncError = lastError?.code === "unavailable" ? null : lastError;
   const { resolved, toggle } = useTheme(THEME_KEY);
   const section = sectionOf(route);
   const spaceName =
@@ -112,29 +131,11 @@ export function Shell({
           </a>
         </nav>
         <footer className="mt-auto grid gap-1 px-3 text-xs text-muted-foreground">
-          <span data-testid="sync-activity">Sync: {syncError ? "needs attention" : household?.activity ?? "idle"}</span>
+          <span data-testid="sync-activity">Sync: {offline ? "offline" : syncError ? "needs attention" : household?.activity ?? "idle"}</span>
           <span>
             {household?.syncedAt === null || household === null
               ? "not synced yet"
               : `as of ${new Date(household.syncedAt).toLocaleTimeString()}`}
-          </span>
-          <span data-testid="network-toggle" className="flex gap-3">
-            <Button
-              variant="link"
-              size="sm"
-              className="h-auto p-0 text-xs"
-              onClick={() => void app.setOnline(false)}
-            >
-              Go offline
-            </Button>
-            <Button
-              variant="link"
-              size="sm"
-              className="h-auto p-0 text-xs"
-              onClick={() => void app.setOnline(true)}
-            >
-              Go online
-            </Button>
           </span>
         </footer>
       </aside>
@@ -172,7 +173,7 @@ export function Shell({
             </Button>
           </div>
         </header>
-        {syncError ? (
+        {syncError && !offline ? (
           <Alert variant="warning" role="status" className="rounded-none border-x-0 border-t-0">
             <AlertDescription>
               Last sync error: {syncError.message} Your local changes are kept on this device.
@@ -187,7 +188,7 @@ export function Shell({
             className="rounded-none border-x-0 border-t-0"
           >
             <AlertDescription className="block">
-              {state.connectivity === "offline" ? "You're offline." : "The service is unreachable."}{" "}
+              <ReconnectStatus nextAttemptAt={state.reconnectAt} />{" "}
               Changes are saved on this device and will sync when you're back online.
               {pending > 0 ? (
                 <strong data-testid="pending-writes">
@@ -213,6 +214,7 @@ export function Shell({
             </AlertDescription>
           </Alert>
         ) : null}
+        <CloudImportBanner />
         <main id="main-content" className="flex-1 px-6 py-6">
           {children}
         </main>
@@ -221,10 +223,22 @@ export function Shell({
   );
 }
 
-/**
- * The bell: how many alerts nobody has read, and the latest few. Alerts are
- * documents like any other, so the count is live wherever the person is.
- */
+/** The displayed deadline belongs to the app's reconnect loop. */
+function ReconnectStatus({ nextAttemptAt }: { nextAttemptAt: number | null }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [nextAttemptAt]);
+  return (
+    <span role="timer" aria-live="off" data-testid="reconnect-countdown">
+      {reconnectMessage(nextAttemptAt, now)}
+    </span>
+  );
+}
+
+/** The bell shows unread alerts and their latest history. */
 function NotificationBell({ app }: { app: RationalApp }) {
   const session = app.household?.session ?? null;
   const documents = useQuery(session?.collection("alerts")?.find() ?? null);

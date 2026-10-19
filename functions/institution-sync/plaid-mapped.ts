@@ -1,6 +1,5 @@
 import type { FunctionDocument, JsonObject } from "@mako-cloud/edge-sdk";
-import { holdingsValue } from "../shared/balances.ts";
-import { compatibleAccount, providerAccounts, providerAccountType, reconciliationAmount, validateMappings, type AccountMapping, type ProviderAccount } from "../shared/plaid-mapping.ts";
+import { compatibleAccount, providerAccounts, providerAccountType, validateMappings, type AccountMapping, type ProviderAccount } from "../shared/plaid-mapping.ts";
 import { parseExchange, parseSyncPage, plaidItemBody, minorUnitsFromPlaid } from "../shared/plaid.ts";
 import { BankOverlap } from "./bank-overlap.ts";
 import { transactionId } from "./institution.ts";
@@ -140,6 +139,15 @@ export class MappedPlaid {
     const providers = await this.accounts(item!);
     const provider = providers.find(candidate => candidate.id === selected.providerAccountId);
     if (!provider || !compatibleAccount(provider, account.body)) throw new Error("The bank account changed; review the connection.");
+    // Balance observations cover every mapped account, independently of history pagination.
+    for (const mapping of mappings) {
+      const reported = providers.find(entry => entry.id === mapping.providerAccountId);
+      const mappedAccount = mapping.accountId === selected.accountId ? account : await this.store.read("accounts", mapping.accountId);
+      if (!mappedAccount || mappedAccount._deleted || mappedAccount.body.household_id !== householdId ||
+        !reported || !compatibleAccount(reported, mappedAccount.body)) throw new Error("The mapped account is unavailable or changed.");
+      if (reported.balance !== null) await this.recordBalance(mappedAccount, reported.balance, linkId, householdId);
+    }
+    const matchingPending = await overlap.reconcilePending(linkId, householdId, selected.accountId);
     let changed = 0;
     // Investment history uses a separate Plaid product; these accounts refresh balances only.
     let complete = !["depository", "credit", "loan"].includes(provider.type);
@@ -190,17 +198,12 @@ export class MappedPlaid {
       // hourly dispatcher retry instead of claiming a successful daily sync.
       if (!page.has_more) break;
     }
-    // A reconciliation entry keeps the imported opening balance and provider history from counting twice.
-    // Do this even on bounded partial phases, so unfinished history does not inflate the displayed balance.
-    const latest = (await this.accounts(item!)).find(candidate => candidate.id === selected.providerAccountId);
-    if (!latest || latest.balance === null) throw new Error("The bank has not supplied a current balance; sync is incomplete.");
-    await this.reconcile(account, latest.balance, linkId, householdId);
-    const reviews = await overlap.reviews(householdId, selected.accountId);
-    if (complete && reviews.length === 0) selected.lastSyncedAt = this.now();
+    if (provider.balance === null) throw new Error("The bank has not supplied a current balance; sync is incomplete.");
+    if (complete && !matchingPending) selected.lastSyncedAt = this.now();
     await this.saveMappings(item!, mappings);
     const pending = mappings.some(due);
     const remaining = mappings.filter(due).length;
-    const outcome = reviews.length ? `Provider history ${complete ? "ready" : "pending"}; ${reviews.length} overlaps need review; balance reconciled, daily sync incomplete.` : pending ? `${remaining} account(s) still syncing; ${changed} transaction changes this phase.` : `${mappings.length} account(s) synced; balances reconciled.`;
+    const outcome = pending ? `${remaining} account(s) still syncing; ${changed} transaction changes this phase.` : `${mappings.length} account(s) synced; balances updated.`;
     const current = await this.store.read("connections", linkId);
     if (current && current.body.status !== "disconnected") await this.store.write("connections", linkId, {
       ...current.body, status: "connected", updated_at: this.now(), last_sync_outcome: outcome,
@@ -209,25 +212,31 @@ export class MappedPlaid {
     return { pending, outcome };
   }
 
-  private async reconcile(account: FunctionDocument, balance: number, linkId: string, householdId: string): Promise<void> {
-    const accountId = String(account.body.id);
-    const id = transactionId(accountId, `balance-${linkId}`);
-    const booked = await this.store.list("transactions", "account_id", accountId);
-    const otherAmounts = booked.filter(entry => !entry._deleted && entry.body.id !== id).map(entry => {
-      if (entry.body.household_id !== householdId || typeof entry.body.amount !== "number") throw new Error("Cannot reconcile an invalid account ledger.");
-      return entry.body.amount;
-    });
-    const amount = reconciliationAmount(balance, Number(account.body.opening_balance),
-      holdingsValue(account.body.holdings as unknown as Parameters<typeof holdingsValue>[0]), otherAmounts);
-    const existing = await this.store.read("transactions", id);
-    if (existing && !existing._deleted && existing.body.amount === amount) return;
-    if (!existing && amount === 0) return;
-    await this.store.write("transactions", id, {
-      id, household_id: householdId, account_id: accountId, created_at: existing?.body.created_at ?? this.now(), updated_at: this.now(),
-      date: new Date(this.now()).toISOString().slice(0, 10), amount, currency: String(account.body.currency),
-      description: "Bank balance reconciliation", external_id: `balance-${linkId}`, tags: [], splits: [],
-      adjustment: true, hidden: true, reviewed: true,
-    }, existing?.revision ?? null);
+  private async recordBalance(account: FunctionDocument, balance: number, linkId: string, householdId: string): Promise<void> {
+    if (!Number.isSafeInteger(balance)) throw new Error("The bank balance is not a safe integer.");
+    const accountId = String(account.body.id), observedAt = this.now();
+    const date = new Date(observedAt).toISOString().slice(0, 10);
+    const id = `abs_${accountId}.${date}`;
+    const collection = "account_balance_snapshots";
+    const existing = await this.store.read(collection, id);
+    if (existing && (existing.body.household_id !== householdId || existing.body.account_id !== accountId))
+      throw new Error("Balance observation is unavailable in this household.");
+    if (!existing || Number(existing.body.observed_at) <= observedAt) {
+      await this.store.write(collection, id, {
+        id, household_id: householdId, account_id: accountId,
+        created_at: existing?.body.created_at ?? observedAt, updated_at: observedAt,
+        date, balance, currency: String(account.body.currency), source: "plaid",
+        connection_id: linkId, observed_at: observedAt,
+      }, existing?.revision ?? null);
+    }
+    // Save the source balance first. A failed cleanup can safely resume on the next sync.
+    const legacyId = transactionId(accountId, `balance-${linkId}`);
+    const legacy = await this.store.read("transactions", legacyId);
+    if (legacy && !legacy._deleted && legacy.body.household_id === householdId &&
+      legacy.body.account_id === accountId && legacy.body.external_id === `balance-${linkId}` &&
+      legacy.body.description === "Bank balance reconciliation" && legacy.body.adjustment === true && legacy.body.hidden === true) {
+      await this.store.remove("transactions", legacy);
+    }
   }
 
   private requireItem(item: FunctionDocument | null, householdId: string): void {

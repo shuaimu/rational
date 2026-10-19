@@ -51,6 +51,7 @@ import {
   todayIso,
 } from "./account-form.js";
 import { useBehavior, useQuery } from "./hooks.js";
+import { BalanceSyncStatus } from "./balance-sync-status.js";
 import { routeHash } from "./router.js";
 
 /**
@@ -86,7 +87,8 @@ export function AccountsScreen({
   );
   const transactions = useQuery(session.collection("transactions")?.find() ?? null);
   const snapshots = useQuery(session.collection("net_worth_snapshots")?.find() ?? null);
-  const balances = selectAccountBalances(accounts, transactions);
+  const reportedBalances = useQuery(session.collection("account_balance_snapshots")?.find() ?? null);
+  const balances = selectAccountBalances(accounts, transactions, reportedBalances);
   const netWorth = selectNetWorth(accounts, balances);
   const open = useMemo(
     () => accounts.filter((account) => account.closed_at === undefined),
@@ -138,6 +140,7 @@ export function AccountsScreen({
           ) : undefined
         }
       />
+      <BalanceSyncStatus app={app} session={session} transactionCount={transactions.length} />
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="net-worth">
         {netWorth.length === 0 ? (
           <Stat

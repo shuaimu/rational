@@ -17,6 +17,7 @@ Object.defineProperty(globalThis,'navigator',{value:{onLine:true},configurable:t
 const root=resolve(import.meta.dirname,'..');
 const config=JSON.parse(await readFile(resolve(root,'src/api/mako-config.json'),'utf8'));
 let offline=false,revoked=false,epoch=1,rotation=0,missing=false,headAbsent=false;
+let userRejections=0,pullRejection=null;
 const throttled=new Set();
 const user={id:config.ownerId,email:'owner@fixture.invalid',status:'active',authorizationEpoch:1};
 const token=()=>`fixture.${Buffer.from(JSON.stringify({sub:user.id,project_id:config.projectId,environment_id:config.environmentId,environment_authorization_epoch:epoch,user_authorization_epoch:1,nonce:++rotation})).toString('base64url')}.signature`;
@@ -33,14 +34,15 @@ const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:
 globalThis.fetch=async(url,init={})=>{
  const path=new URL(url).pathname;requests.push(path);
  if(offline) throw new TypeError('fixture offline');
- if(path.endsWith('/auth/signin')||path.endsWith('/auth/token')) return revoked?json({error:{code:'unauthenticated',message:'fixture revoked',requestId:'req_fixture',retry:{kind:'never'}}},401):json(wire());
- if(path.endsWith('/auth/user')) return revoked?json({},401):json(user);
+ if(path.endsWith('/auth/signin')||path.endsWith('/auth/token')) return revoked?json({apiVersion:"v1",error:{code:'unauthenticated',message:'fixture revoked',requestId:'req_fixture',retry:{kind:'never'}}},401):json(wire());
+ if(path.endsWith('/auth/user')) { if(userRejections>0){userRejections--;return json({},401);} return revoked?json({},401):json(user); }
  if(path.endsWith('/auth/signout')) return json({});
  if(init.headers?.Accept==='text/event-stream') return new Response(new ReadableStream({start(controller){init.signal?.addEventListener('abort',()=>controller.close(),{once:true});}}),{headers:{'Content-Type':'text/event-stream'}});
  if(path.endsWith('/replication/pull')) {
-   if(revoked)return json({error:{code:'unauthenticated',message:'fixture revoked',requestId:'req_fixture',retry:{kind:'never'}}},401);
+   if(revoked)return json({apiVersion:"v1",error:{code:'unauthenticated',message:'fixture revoked',requestId:'req_fixture',retry:{kind:'never'}}},401);
    const collection=path.split('/').at(-3),body=JSON.parse(init.body);
-   if(throttled.has(collection))return json({error:{code:'rate_limited',message:'replication request is throttled',requestId:'req_fixture',retry:{kind:'after_delay',afterMs:25}}},429);
+   if(collection==='portfolio_heads'&&pullRejection){const code=pullRejection;pullRejection=null;return json({apiVersion:"v1",error:{code,message:'fixture access change',requestId:'req_fixture',retry:{kind:'never'}}},403);}
+   if(throttled.has(collection))return json({apiVersion:"v1",error:{code:'rate_limited',message:'replication request is throttled',requestId:'req_fixture',retry:{kind:'after_delay',afterMs:25}}},429);
    const checkpoint=`fixture_${epoch}_${version}_${missing}_${headAbsent}_${collection}`;
    const rows=collection==='portfolio_heads'?(headAbsent?[]:[head()]):collection==='portfolio_public'?[manifest,...missing?[]:[part],empty]:collection==='cache_status'?[{id:'cache',generation:1,state:'ready',jobId:null,latest:[],historicalDigest:createHash('sha256').update('[]').digest('hex'),historicalCount:0,updatedAt:0}]:[];
    return json({documents:body.checkpoint===checkpoint?[]:rows.map(r=>({...r,_deleted:false})),checkpoint});
@@ -74,6 +76,18 @@ try {
  await Promise.all(Array.from({length:8},()=>app.auth.refreshSession()));
  assert.equal(requests.filter(p=>p.endsWith('/auth/token')).length-refreshes,1);
  console.log('Passed local integration: concurrent session renewal is coalesced');
+ const signouts=requests.filter(p=>p.endsWith('/auth/signout')).length;
+ userRejections=1;await app.validateSession();assert.equal(app.getAuthState().status,'ready');
+ assert.equal(requests.filter(p=>p.endsWith('/auth/signout')).length,signouts);
+ console.log('Passed local integration: rejected access token renews without shared sign-out');
+ userRejections=2;await app.validateSession();assert.equal(app.getAuthState().status,'ready');assert.equal(app.getAuthState().offline,true);
+ assert.equal(requests.filter(p=>p.endsWith('/auth/signout')).length,signouts);
+ await app.validateSession();assert.equal(app.getAuthState().offline,false);
+ console.log('Passed local integration: failed user validation does not revoke a valid refresh session');
+ epoch=2;pullRejection='permission_denied';await app.resync();
+ await until(()=>app.getAuthState().scope?.includes(',2,1]')&&app.getSyncStatus().readable,'authorization change recovers without sign-in');
+ assert.equal(requests.filter(p=>p.endsWith('/auth/signout')).length,signouts);
+ console.log('Passed local integration: replication access change rebuilds scope without shared sign-out');
  await app.closeLocalData();offline=true;navigator.onLine=false;await app.startReplication();assert.equal((await app.readGeneration()).tables.accounts.length,1);assert.equal(app.getSyncStatus().readable,true);
  console.log('Passed local integration: offline reopen retains verified data');
  offline=false;navigator.onLine=true;version=2;await app.resync();await app.waitForVersion(2);assert.equal((await app.readGeneration()).tables.accounts.length,0);

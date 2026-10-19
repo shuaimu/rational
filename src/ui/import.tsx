@@ -36,6 +36,7 @@ import { formatMinorUnits } from "../selectors/money.js";
 import { applyRules } from "../selectors/rules.js";
 import { useQuery } from "./hooks.js";
 import { MonarchImportPanel } from "./monarch-import.js";
+import { CsvConversionHelp } from "./csv-conversion-help.js";
 import { transactionsHash } from "./router.js";
 
 /**
@@ -168,11 +169,14 @@ export function ImportScreen({
           Import
         </h1>
         <p className="text-sm text-muted-foreground">
-          A bank's CSV export, previewed before a single row is written.
+          Import transaction history from a CSV, with a preview before anything is saved.
         </p>
       </div>
       <Field label="Import format" htmlFor="import-mode"><NativeSelect id="import-mode" value={mode} onChange={event=>setMode(event.target.value as "bank"|"monarch")}><option value="monarch">Monarch history</option><option value="bank">Generic bank CSV</option></NativeSelect></Field>
-      {mode === "monarch" ? <MonarchImportPanel app={app} accounts={accounts} currency={currency}/> : <>
+      {mode === "monarch" ? <>
+        <CsvConversionHelp />
+        <MonarchImportPanel app={app} accounts={accounts} currency={currency}/>
+      </> : <>
       {problem === null ? null : (
         <Alert variant="destructive">
           <CircleAlert />

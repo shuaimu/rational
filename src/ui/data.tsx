@@ -45,7 +45,8 @@ export function DataScreen({
   const accounts = useQuery(session.collection("accounts")?.find() ?? null);
   const transactions = useQuery(session.collection("transactions")?.find() ?? null);
   const taxonomy = useQuery(session.collection("taxonomy")?.find() ?? null);
-  const balances = selectAccountBalances(accounts, transactions);
+  const reportedBalances = useQuery(session.collection("account_balance_snapshots")?.find() ?? null);
+  const balances = selectAccountBalances(accounts, transactions, reportedBalances);
   // Newest first, as the transactions screen lists them; a spreadsheet sorts
   // either way, and a file that opens on last week reads as current.
   const orderedTransactions = useMemo(() => sortTransactions(transactions), [transactions]);
