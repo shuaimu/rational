@@ -23,6 +23,15 @@ const LEVERAGE_MAP: Record<string, LeverageEntry> = {
   // MSFT family
   MSFU: { underlying: 'MSFT', multiplier: 2 },
 
+  // NVDA family
+  NVDU: { underlying: 'NVDA', multiplier: 2 },
+  NVDL: { underlying: 'NVDA', multiplier: 2 },
+  NVDX: { underlying: 'NVDA', multiplier: 2 },
+  NVD: { underlying: 'NVDA', multiplier: -2 },
+  NVDQ: { underlying: 'NVDA', multiplier: -2 },
+  NVDS: { underlying: 'NVDA', multiplier: -1.5 },
+  NVDD: { underlying: 'NVDA', multiplier: -1 },
+
   // QQQ / Nasdaq family
   QLD: { underlying: 'QQQ', multiplier: 2 },
   TQQQ: { underlying: 'QQQ', multiplier: 3 },
