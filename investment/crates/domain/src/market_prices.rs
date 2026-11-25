@@ -58,19 +58,10 @@ pub fn parse_split_suffix(symbol: &str) -> Option<(String, f64)> {
     Some((base, n))
 }
 
+/// Leveraged/inverse ETF → `(underlying, multiplier)`. Shares the map in
+/// `robinlab-core` so price fetching and Wasm enrichment cannot drift apart.
 pub fn leverage_underlying(symbol: &str) -> Option<(&'static str, f64)> {
-    match symbol.trim().to_ascii_uppercase().as_str() {
-        "AAPU" => Some(("AAPL", 2.0)),
-        "AMDD" => Some(("AMD", 2.0)),
-        "AMZU" => Some(("AMZN", 2.0)),
-        "MSFU" => Some(("MSFT", 2.0)),
-        "QLD" => Some(("QQQ", 2.0)),
-        "TQQQ" => Some(("QQQ", 3.0)),
-        "SQQQ" => Some(("QQQ", -3.0)),
-        "PSQ" => Some(("QQQ", -1.0)),
-        "UPRO" => Some(("SPY", 3.0)),
-        _ => None,
-    }
+    robinlab_core::leverage::leverage_underlying(symbol)
 }
 
 pub fn twelve_series(payload: &Value) -> BTreeMap<NaiveDate, f64> {
@@ -139,5 +130,12 @@ mod tests {
             Some(("VIGIX".into(), 1.987))
         );
         assert!(!is_remote_fetchable_symbol("VIGIX*1.987"));
+    }
+
+    #[test]
+    fn leveraged_etfs_fetch_their_underlying_price() {
+        assert_eq!(leverage_underlying("NVDU"), Some(("NVDA", 2.0)));
+        assert_eq!(leverage_underlying("SQQQ"), Some(("QQQ", -3.0)));
+        assert_eq!(leverage_underlying("NVDA"), None);
     }
 }
